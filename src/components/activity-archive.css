@@ -1,0 +1,37 @@
+/* Activity collections inside Events — folded rows that open into a photographic wall. */
+.activity-archive { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 70px; margin-top: 110px; padding-top: 70px; border-top: 1px solid rgb(198 168 117 / 18%); align-items: start; }
+
+.activity-row { border-bottom: 1px solid rgb(185 200 213 / 14%); padding: 0; }
+.activity-row:first-of-type { border-top: 1px solid rgb(185 200 213 / 14%); }
+
+.activity-row > summary { display: flex; align-items: center; gap: 18px; padding: 22px 2px; cursor: pointer; list-style: none; font-family: var(--font-display, inherit); font-size: 1.15rem; letter-spacing: .04em; color: var(--color-ivory, #f4f0e8); transition: color .3s ease; }
+.activity-row > summary::-webkit-details-marker { display: none; }
+.activity-row > summary::marker { content: ''; }
+.activity-row > summary:hover,
+.activity-row > summary:focus-visible { color: var(--color-gold, #c6a875); }
+.activity-row > summary:focus-visible { outline: 1px solid var(--color-gold, #c6a875); outline-offset: 4px; }
+.activity-row > summary > span:first-child { flex: 1 1 auto; }
+.activity-row > summary .activity-count { color: var(--color-mist, #b9c8d5); font-size: 9px; opacity: .75; white-space: nowrap; }
+.activity-row > summary svg { color: var(--color-gold, #c6a875); flex: 0 0 auto; transition: transform .35s ease; }
+.activity-row[open] > summary svg { transform: rotate(45deg); }
+
+.activity-summary { margin: 0 0 22px; max-width: 46ch; font-size: .8rem; line-height: 1.85; color: var(--color-mist, #b9c8d5); }
+.activity-row[open] { padding-bottom: 26px; }
+
+.activity-gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+.activity-frame { margin: 0; }
+.activity-frame .photo-surface { aspect-ratio: 4 / 3; width: 100%; }
+.activity-frame figcaption { display: flex; gap: 9px; margin-top: 10px; font-size: .66rem; line-height: 1.6; color: var(--color-mist, #b9c8d5); }
+.activity-frame figcaption .eyebrow { flex: 0 0 auto; font-size: 8px; padding-top: 2px; }
+
+@media (max-width: 1000px) {
+  .activity-archive { grid-template-columns: minmax(0, 1fr); gap: 40px; margin-top: 80px; padding-top: 55px; }
+}
+
+@media (max-width: 650px) {
+  .activity-archive { margin-top: 60px; padding-top: 45px; }
+  .activity-row > summary { font-size: 1rem; padding: 18px 0; gap: 12px; }
+  .activity-row > summary .activity-count { font-size: 8px; }
+  .activity-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .activity-frame figcaption { font-size: .6rem; }
+}

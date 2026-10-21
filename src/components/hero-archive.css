@@ -1,0 +1,15 @@
+/* 主照片的换片：旧片淡出、新片淡入，两者在 1.9 秒内交叠，减少生硬跳变。 */
+.hero-photo-wrap{position:relative}
+/* 照片区永远有明确高度与底色，图片未载入或失败时也不会塌成一条窄带。 */
+.hero-photo-stack{position:relative;height:calc(100% - 47px);width:100%;min-height:clamp(300px,46svh,540px);overflow:hidden;background:linear-gradient(160deg,#263443,#151e29)}
+.hero-photo-layer{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transform:scale(1.035);transition:opacity 1.9s cubic-bezier(.4,0,.2,1),transform 2.4s cubic-bezier(.4,0,.2,1);will-change:opacity,transform}
+.hero-photo-layer.is-active{opacity:1;transform:scale(1)}
+/* 底图始终可见；上层照片淡入时才盖住它，形成柔和的交叠过渡。 */
+.hero-photo-base{opacity:1;transform:scale(1);z-index:0}
+.hero-photo-stack .hero-photo-layer:not(.hero-photo-base){z-index:1}
+.hero-photo-fallback{position:absolute;inset:0;z-index:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:28px;text-align:center;background:radial-gradient(ellipse at 50% 38%,#202C3A,#10151D 75%)}
+.hero-photo-base.is-hidden{display:none}
+.hero-photo-fallback-title{font-family:var(--font-display);font-size:clamp(18px,2vw,28px);color:#B9C8D5;line-height:1.3}
+@media(prefers-reduced-motion:reduce){.hero-photo-layer{transition:opacity .4s linear;transform:none}}
+@media(max-width:800px){.hero-photo-stack{min-height:clamp(250px,42svh,420px)}}
+@media(max-width:450px){.hero-photo-stack{min-height:260px}}

@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS visitor_passport_stamps (id TEXT PRIMARY KEY NOT NULL, visitor_id TEXT NOT NULL, chapter_id TEXT NOT NULL, visited_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS visitor_passport_owner ON visitor_passport_stamps(visitor_id);

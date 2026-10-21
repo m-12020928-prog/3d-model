@@ -1,0 +1,49 @@
+/* 记忆隧道：固定展区 + 滚动绑定相机。布局只用暗色与金色，与全站一致。 */
+.memory-tunnel{position:relative;background:#04060b;border-top:1px solid #B9C8D51c;border-bottom:1px solid #B9C8D51c;overflow:clip}
+/* 整段记忆背景都是银河：每个视口高度重复一层缓慢漂移的星云。 */
+.memory-tunnel::before{content:'';position:absolute;inset:0;z-index:0;pointer-events:none;background-image:radial-gradient(ellipse 58% 40% at 24% 20%,#C6A8752e,transparent 72%),radial-gradient(ellipse 50% 32% at 82% 56%,#702D3A30,transparent 74%),radial-gradient(ellipse 64% 44% at 44% 88%,#3B5B8C26,transparent 72%),radial-gradient(ellipse 90% 30% at 52% 46%,#B9C8D514,transparent 76%);background-size:100% 100vh,100% 100vh,100% 100vh,100% 100vh;background-repeat:repeat-y;animation:memory-nebula-drift 38s ease-in-out infinite alternate}
+@keyframes memory-nebula-drift{from{opacity:.72;transform:translate3d(0,0,0) scale(1)}to{opacity:1;transform:translate3d(-1.8%,1.2%,0) scale(1.05)}}
+.tunnel-heading{position:relative;z-index:1;padding:120px 0 55px}
+.tunnel-heading-row{display:flex;align-items:flex-end;justify-content:space-between;gap:60px;margin-top:45px}
+.tunnel-heading-copy{max-width:360px}
+.tunnel-hint{display:flex;align-items:center;gap:9px;margin-top:22px;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#C6A875}
+/* 纵深拉长后滚动距离同步加长，每张照片经过的速度保持从容、可连续浏览。 */
+.tunnel-scroll{position:relative;z-index:1;height:470vh}
+.tunnel-sticky{position:sticky;top:0;height:100vh;overflow:hidden;background:#04060b}
+.tunnel-canvas{position:absolute;inset:0;z-index:1;width:100%;height:100%;display:block;touch-action:pan-y;cursor:default}
+.tunnel-hud{position:absolute;inset:0;z-index:2;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;padding:34px clamp(20px,5vw,64px) 40px}
+.tunnel-hud-top{display:flex;align-items:flex-start;justify-content:space-between;gap:24px}
+.tunnel-chapter{display:flex;flex-direction:column;gap:8px;max-width:340px}
+.tunnel-chapter strong{font:italic 400 clamp(20px,2.2vw,30px)/1.3 var(--font-display);color:#F0EDE6}
+.tunnel-chapter .eyebrow{color:#C6A875}
+.tunnel-theme-note{font-size:9px;line-height:1.8;color:#B9C8D588;max-width:230px;text-align:right}
+.tunnel-status{margin-top:auto;display:flex;align-items:flex-end;justify-content:space-between;gap:24px}
+.tunnel-caption{font-size:11px;letter-spacing:.06em;color:#B9C8D5;min-height:18px;max-width:520px;line-height:1.7}
+.tunnel-caption strong{color:#C6A875;font-weight:400}
+.tunnel-counter{font-size:9px;letter-spacing:.22em;color:#B9C8D599;text-transform:uppercase;white-space:nowrap}
+.tunnel-progress{margin-top:22px}
+.tunnel-track{position:relative;height:1px;background:#B9C8D533}
+.tunnel-fill{position:absolute;inset:0;transform:scaleX(0);transform-origin:left center;background:linear-gradient(90deg,#C6A87566,#C6A875);transition:transform .12s linear}
+.tunnel-ticks{display:grid;grid-template-columns:repeat(4,1fr);margin-top:12px;gap:14px}
+.tunnel-ticks span{font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:#B9C8D577}
+.tunnel-ticks span.active{color:#C6A875}
+.tunnel-overlay{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:24px;background:#090d13e0;backdrop-filter:blur(6px)}
+.tunnel-overlay figure{margin:0;max-width:min(560px,92vw);max-height:88vh;display:flex;flex-direction:column;gap:20px;background:#141d27;border:1px solid #C6A87544;padding:22px}
+.tunnel-overlay img{width:100%;max-height:64vh;object-fit:contain;display:block;background:#0f1720}
+.tunnel-overlay figcaption{font-size:11px;line-height:1.9;color:#B9C8D5}
+.tunnel-overlay figcaption strong{display:block;font:italic 400 22px/1.35 var(--font-display);color:#F0EDE6;margin-bottom:8px}
+.tunnel-overlay-empty{display:flex;align-items:center;justify-content:center;aspect-ratio:3/4;background:repeating-linear-gradient(135deg,#141d27,#141d27 12px,#17212c 12px,#17212c 24px);border:1px solid #C6A87533;color:#B9C8D5;font-size:11px;text-align:center;padding:30px;line-height:1.9}
+.tunnel-close{position:absolute;top:18px;right:18px;width:44px;height:44px;display:grid;place-items:center;background:#10151Dcc;border:1px solid #B9C8D544;color:#F0EDE6}
+.tunnel-close:hover{background:#C6A875;color:#10151D}
+.tunnel-unsupported{position:absolute;inset:0;z-index:3;display:flex;align-items:center;justify-content:center;padding:32px}
+.tunnel-unsupported>div{max-width:520px;border:1px solid #C6A87544;background:#141d27ee;padding:34px 30px}
+.tunnel-unsupported h3{font:italic 400 24px/1.4 var(--font-display);color:#F0EDE6;margin:0 0 14px}
+.tunnel-unsupported p{font-size:12px;line-height:2;color:#B9C8D5;margin:0 0 12px}
+.tunnel-unsupported ul{list-style:none;margin:18px 0 0;padding:0;display:grid;gap:8px}
+.tunnel-unsupported li{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#C6A875}
+.tunnel-outro{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:24px;padding:70px 0 100px}
+.tunnel-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.tunnel-sr button{display:block;width:100%;margin:4px 0}
+@media(max-width:900px){.tunnel-heading-row{display:block}.tunnel-heading-copy{margin-top:28px;max-width:100%}.tunnel-theme-note{display:none}}
+@media(max-width:650px){.tunnel-heading{padding:85px 0 30px}.tunnel-scroll{height:380vh}.tunnel-hud{padding:22px 18px 26px}.tunnel-caption{font-size:10px}.tunnel-ticks{gap:6px}.tunnel-ticks span{font-size:7px;letter-spacing:.1em}.tunnel-overlay{padding:12px}.tunnel-overlay figure{padding:14px;gap:14px}.tunnel-outro{padding:50px 0 80px}}
+@media(prefers-reduced-motion:reduce){.tunnel-fill{transition:none}.memory-tunnel::before{animation:none;opacity:.85}}

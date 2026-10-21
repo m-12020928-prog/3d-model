@@ -1,0 +1,13 @@
+/* 顶部目录收成右侧三条杠：不论是电脑还是手机，导航只在点开时出现。 */
+.nav-right{margin-left:auto;display:flex;align-items:center;gap:20px;flex:none}
+.nav-bars{display:inline-flex;align-items:center;justify-content:center;width:46px;height:46px;padding:0;border:1px solid #C6A87559;background:#10151Dcc;color:#C6A875;cursor:pointer;flex:none;transition:background .25s,color .25s,border-color .25s}
+.nav-bars:hover{background:#C6A875;border-color:#C6A875;color:#10151D}
+.nav-bars:focus-visible{outline:1px solid #C6A875;outline-offset:3px}
+.nav-panel{position:absolute;right:4%;top:calc(100% + 6px);width:min(332px,calc(100vw - 28px));padding:4px 0;background:#0d131b;border:1px solid #C6A87540;box-shadow:0 30px 70px #000000b8;z-index:80;max-height:calc(100vh - 96px);overflow-y:auto}
+.nav-panel a{display:flex;align-items:center;gap:14px;padding:15px 20px;font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#B9C8D5;border-bottom:1px solid #B9C8D514;transition:color .2s,background .2s}
+.nav-panel a:last-child{border-bottom:0}
+.nav-panel a:hover,.nav-panel a:focus-visible{color:#C6A875;background:#C6A87512}
+.nav-panel a.active{color:#C6A875;background:#C6A87510}
+.nav-index{font-size:8px;letter-spacing:.12em;color:#C6A87599;min-width:18px}
+.nav-panel a.active .nav-index{color:#C6A875}
+@media(max-width:800px){.nav-right{gap:12px}.nav-est{display:none}.nav-panel{right:6%}}

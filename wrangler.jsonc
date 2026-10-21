@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "smkkb",
+  "compatibility_date": "2025-09-02",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "main": "@tanstack/react-start/server-entry",
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "smkkb-db",
+      "database_id": "e7b81dfe-d6a2-4d09-94b6-9f117fe965f3",
+      "migrations_dir": "migrations"
+    }
+  ]
+}
