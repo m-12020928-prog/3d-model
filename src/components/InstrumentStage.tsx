@@ -8,8 +8,9 @@ import { INSTRUMENT_MODELS } from '@/content/instrument-models'
 import { lookAt, multiply, perspective } from './gl/matrix'
 import type { Vec3 } from './gl/matrix'
 
-// 展台只用原生 WebGL 显示本站自制的乐器模型：先按整体包围盒居中并缩放，
-// 因此无论模型原始尺寸多大，都会完整落在镜头里。旋转、缩放与部件选择都可用。
+// 展台只用原生 WebGL 显示乐器模型：先按整体包围盒居中并缩放，
+// 因此无论模型原始尺寸多大，都会完整落在镜头里。可拖动旋转、用按钮或方向键缩放。
+// 不再标注"部件"：模型只负责真实呈现乐器外观。
 const VERTEX = `
 attribute vec3 a_position;
 attribute vec3 a_normal;
@@ -24,6 +25,7 @@ void main() {
   gl_Position = u_viewProj * world;
 }`
 
+// 金属靠环境反射才像金属：这里用三段渐变的天光、一盏金色反射和清漆高光模拟展台布光。
 const FRAGMENT = `
 precision highp float;
 varying vec3 v_normal;
@@ -32,32 +34,34 @@ uniform vec3 u_eye;
 uniform vec3 u_color;
 uniform float u_metal;
 uniform float u_rough;
-uniform float u_focus;
 void main() {
   vec3 n = normalize(v_normal);
   vec3 v = normalize(u_eye - v_world);
   if (dot(n, v) < 0.0) { n = -n; }
-  vec3 keyDir = normalize(vec3(0.42, 0.84, 0.52));
-  vec3 fillDir = normalize(vec3(-0.76, 0.22, 0.32));
+  vec3 keyDir = normalize(vec3(0.34, 0.92, 0.46));
+  vec3 fillDir = normalize(vec3(-0.82, 0.16, 0.34));
+  vec3 backDir = normalize(vec3(-0.12, 0.42, -0.94));
   float key = max(dot(n, keyDir), 0.0);
   float fill = max(dot(n, fillDir), 0.0);
-  float rim = pow(1.0 - max(dot(n, v), 0.0), 2.4);
-  vec3 halfVec = normalize(keyDir + v);
-  float spec = pow(max(dot(n, halfVec), 0.0), mix(64.0, 9.0, u_rough)) * mix(0.35, 1.0, u_metal);
-  vec3 color = u_color * (0.14 + key * 1.05);
-  color += u_color * fill * 0.3 + vec3(1.0, 0.93, 0.82) * spec;
-  color += vec3(0.42, 0.56, 0.72) * rim * (0.26 + u_metal * 0.36);
-  color = color / (1.0 + color * 0.32);
-  // 选中部件：保持亮度并加一层金色光；未选中的部件退到背景里。
-  float dim = min(u_focus, 1.0);
-  float glow = max(u_focus - 1.0, 0.0);
-  color = color * dim + vec3(0.24, 0.19, 0.1) * glow;
+  float back = max(dot(n, backDir), 0.0);
+  vec3 r = reflect(-v, n);
+  float sky = clamp(r.y * 0.5 + 0.5, 0.0, 1.0);
+  vec3 env = mix(vec3(0.035, 0.042, 0.055), mix(vec3(0.13, 0.16, 0.21), vec3(0.48, 0.54, 0.62), pow(sky, 2.0)), sky);
+  float sheen = pow(max(dot(r, keyDir), 0.0), mix(4.0, 42.0, 1.0 - u_rough));
+  env += vec3(0.78, 0.64, 0.42) * sheen * 0.6;
+  float fres = pow(1.0 - max(dot(n, v), 0.0), 3.0);
+  vec3 diffuse = u_color * (0.15 + key * 1.02 + fill * 0.26 + back * 0.34);
+  vec3 spec = vec3(1.0, 0.95, 0.86) * pow(max(dot(n, normalize(keyDir + v)), 0.0), mix(64.0, 8.0, u_rough));
+  vec3 lacquer = env * (0.45 + u_color) + u_color * key * 0.4 + spec * 0.95;
+  vec3 color = mix(diffuse + spec * 0.28, lacquer, u_metal);
+  color += vec3(0.44, 0.57, 0.72) * fres * (0.1 + u_metal * 0.32);
+  color = color / (1.0 + color * 0.42);
   gl_FragColor = vec4(color, 1.0);
 }`
 
 type Camera = { yaw: number; pitch: number; dist: number; intro: number }
 type Program = { program: WebGLProgram; use(): void; u(name: string): WebGLUniformLocation | null; a(name: string): number }
-type DrawPart = { position: WebGLBuffer; normal: WebGLBuffer; index: WebGLBuffer; count: number; color: [number, number, number]; metal: number; rough: number; part: string | null; type: number }
+type DrawPart = { position: WebGLBuffer; normal: WebGLBuffer; index: WebGLBuffer; count: number; color: [number, number, number]; metal: number; rough: number; type: number }
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 const START: Camera = { yaw: -0.6, pitch: 0.04, dist: 3.05, intro: 0 }
@@ -87,46 +91,30 @@ function program(gl: WebGLRenderingContext): Program | null {
   }
 }
 
-// 把模型空间里的锚点投到画布像素坐标，用来摆放部件标记。
-function projectPoint(matrix: Float32Array, point: Vec3): { x: number; y: number; w: number } {
-  const [px, py, pz] = point
-  const x = matrix[0] * px + matrix[4] * py + matrix[8] * pz + matrix[12]
-  const y = matrix[1] * px + matrix[5] * py + matrix[9] * pz + matrix[13]
-  const w = matrix[3] * px + matrix[7] * py + matrix[11] * pz + matrix[15]
-  return { x, y, w }
-}
+type StageProps = { instrument: Instrument; firstReveal?: boolean; onIntroDone?: () => void }
 
-type StageProps = { instrument: Instrument; firstReveal?: boolean; onIntroDone?: () => void; selectedPart?: string | null; onSelectPart?: (id: string) => void }
-
-export function InstrumentStage({ instrument, firstReveal = true, onIntroDone, selectedPart = null, onSelectPart }: StageProps) {
+export function InstrumentStage({ instrument, firstReveal = true, onIntroDone }: StageProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const camera = useRef<Camera>({ ...START })
   const introCallback = useRef(onIntroDone)
-  const focusRef = useRef<string | null>(selectedPart)
-  const markerRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const [failed, setFailed] = useState(false)
   const [custom, setCustom] = useState<InstrumentModel | null>(null)
   const [customError, setCustomError] = useState(false)
-  const [customLoading, setCustomLoading] = useState(false)
 
   const modelConfig = INSTRUMENT_MODELS[instrument.id]
   useEffect(() => {
     setCustom(null)
     setCustomError(false)
-    setCustomLoading(false)
     const config = INSTRUMENT_MODELS[instrument.id]
     if (!config) return
     let cancelled = false
-    setCustomLoading(true)
-    loadInstrumentModel(config.url, config.keywords)
+    loadInstrumentModel(config.url, { body: config.body, finishes: config.finishes })
       .then(loaded => { if (!cancelled) setCustom(loaded) })
       .catch(() => { if (!cancelled) setCustomError(true) })
-      .finally(() => { if (!cancelled) setCustomLoading(false) })
     return () => { cancelled = true }
   }, [instrument.id])
 
   useEffect(() => { introCallback.current = onIntroDone }, [onIntroDone])
-  useEffect(() => { focusRef.current = selectedPart }, [selectedPart])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -188,17 +176,9 @@ export function InstrumentStage({ instrument, firstReveal = true, onIntroDone, s
         if (wide && !uintExt) throw new Error('uint indices')
         context.bufferData(context.ELEMENT_ARRAY_BUFFER, item.mesh.indices, context.STATIC_DRAW)
         const material = item.look ?? MATERIALS[item.material]
-        parts.push({ position: positionBuffer, normal: normalBuffer, index: indexBuffer, count: item.mesh.indices.length, color: material.color, metal: material.metal, rough: material.rough, part: item.part ?? null, type: wide ? context.UNSIGNED_INT : context.UNSIGNED_SHORT })
+        parts.push({ position: positionBuffer, normal: normalBuffer, index: indexBuffer, count: item.mesh.indices.length, color: material.color, metal: material.metal, rough: material.rough, type: wide ? context.UNSIGNED_INT : context.UNSIGNED_SHORT })
       }
     } catch { setFailed(true); return }
-
-    // 每个部件取一个锚点，标记跟着模型一起转动。
-    const anchors: { id: string; point: Vec3 }[] = []
-    for (const item of instrument.parts) {
-      const raw = model.anchors[item.id]?.[0]
-      if (!raw) continue
-      anchors.push({ id: item.id, point: [(raw[0] - centreX) * scale, (raw[1] - centreY) * scale, (raw[2] - centreZ) * scale] })
-    }
 
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const view = camera.current
@@ -267,7 +247,6 @@ export function InstrumentStage({ instrument, firstReveal = true, onIntroDone, s
       const eye: Vec3 = [Math.sin(yaw) * distance, 0.34 + view.pitch * 1.5, Math.cos(yaw) * distance]
       const viewProjection = multiply(projection, lookAt(eye, [0, 0, 0]))
 
-      const focus = focusRef.current
       surface.use()
       context.uniformMatrix4fv(surface.u('u_model'), false, identity)
       context.uniformMatrix4fv(surface.u('u_viewProj'), false, viewProjection)
@@ -285,22 +264,7 @@ export function InstrumentStage({ instrument, firstReveal = true, onIntroDone, s
         context.uniform3fv(surface.u('u_color'), new Float32Array(part.color))
         context.uniform1f(surface.u('u_metal'), part.metal)
         context.uniform1f(surface.u('u_rough'), part.rough)
-        context.uniform1f(surface.u('u_focus'), !focus ? 1 : part.part === focus ? 1.3 : model.partsKnown === false ? 1 : 0.3)
         context.drawElements(context.TRIANGLES, part.count, part.type, 0)
-      }
-
-      // 部件标记跟随模型：投影到画布坐标，转到画面外的就藏起来。
-      for (const anchor of anchors) {
-        const element = markerRefs.current[anchor.id]
-        if (!element) continue
-        const clip = projectPoint(viewProjection, anchor.point)
-        if (clip.w <= 0.001) { element.style.opacity = '0'; element.style.pointerEvents = 'none'; continue }
-        const sx = (clip.x / clip.w * 0.5 + 0.5) * width
-        const sy = (0.5 - clip.y / clip.w * 0.5) * height
-        const inside = sx > 10 && sx < width - 10 && sy > 10 && sy < height - 10
-        element.style.transform = `translate(${sx}px, ${sy}px) translate(-50%, -50%)`
-        element.style.opacity = inside ? '1' : '0'
-        element.style.pointerEvents = inside ? 'auto' : 'none'
       }
       drawnFrames += 1
     }
@@ -320,7 +284,7 @@ export function InstrumentStage({ instrument, firstReveal = true, onIntroDone, s
       context.deleteProgram(surface.program)
       parts.forEach(part => { context.deleteBuffer(part.position); context.deleteBuffer(part.normal); context.deleteBuffer(part.index) })
     }
-  }, [instrument.id, instrument.parts, firstReveal, custom])
+  }, [instrument.id, firstReveal, custom])
 
   const zoom = (step: number) => { camera.current.dist = clamp(camera.current.dist + step, 1.85, 4.6); camera.current.intro = 1 }
   const reset = () => { camera.current.yaw = START.yaw; camera.current.pitch = START.pitch; camera.current.dist = START.dist; camera.current.intro = 1 }
@@ -335,18 +299,6 @@ export function InstrumentStage({ instrument, firstReveal = true, onIntroDone, s
       <div className="instrument-canvas-wrap">
         <span className="stage-badge">{custom ? 'Imported 3D model' : 'Illustrative 3D model · built for this archive'}</span>
         <canvas ref={canvasRef} className="instrument-canvas" tabIndex={0} role="img" aria-label={`Three-dimensional model of a ${instrument.name}. Drag to turn it, and use the buttons to move closer or further away.`} />
-        {!failed && instrument.parts.map((item, index) => (
-          <button
-            key={item.id}
-            type="button"
-            ref={element => { markerRefs.current[item.id] = element }}
-            onClick={() => onSelectPart?.(item.id)}
-            aria-pressed={selectedPart === item.id}
-            aria-label={`Highlight the ${item.name}`}
-            className={`absolute left-0 top-0 grid h-7 w-7 place-items-center rounded-full border text-[10px] tracking-[.04em] transition-colors ${selectedPart === item.id ? 'border-[#C6A875] bg-[#C6A875] text-[#10151D]' : 'border-[#C6A87580] bg-[#10151Dcc] text-[#C6A875] hover:border-[#C6A875]'}`}
-            style={{ opacity: 0, pointerEvents: 'none', zIndex: 3 }}
-          >{String(index + 1).padStart(2, '0')}</button>
-        ))}
         {modelConfig && !custom && (
           <span className="stage-hint eyebrow absolute left-3 right-3 top-10 z-[3]" role="status" aria-live="polite">
             {customError

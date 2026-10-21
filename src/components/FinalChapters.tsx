@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowUp, ArrowUpRight, Plus } from 'lucide-react'
-import { bandAudio, copy, socials, faq, feedbackCategories } from '@/content/archive'
+import { ArrowUp, ArrowUpRight, Plus, Star } from 'lucide-react'
+import { bandAudio, copy, socials, faq } from '@/content/archive'
 import { ChapterLabel, SectionLink } from './ArchiveUI'
 import { useStageEntries } from './useStageEntries'
 import './final-chapters.css'
@@ -18,9 +18,8 @@ function BackToTop() {
 }
 
 function Feedback() {
-  const [category, setCategory] = useState('')
+  const [rating, setRating] = useState(0)
   const [message, setMessage] = useState('')
-  const [extra, setExtra] = useState('')
   const [problem, setProblem] = useState('')
   const [checked, setChecked] = useState(false)
   const [ready, setReady] = useState(false)
@@ -30,34 +29,33 @@ function Feedback() {
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
     setChecked(false)
-    if (!feedbackCategories.includes(category)) { setProblem('Choose one of the options above.'); return }
+    if (!rating) { setProblem('Choose a rating from one to five stars.'); return }
     const text = message.trim()
     if (text.length < 5 || text.length > 2000) { setProblem('Please write a note of 5 to 2,000 characters.'); return }
     setProblem('')
     setChecked(true)
-    setCategory('')
+    setRating(0)
     setMessage('')
-    setExtra('')
   }
   const shown = problem
-  return <section id="feedback" className="feedback-section" aria-labelledby="feedback-title"><div className="page-width feedback-layout"><div><ChapterLabel number="09">Leave an archive note</ChapterLabel><h2 id="feedback-title" className="section-title mt-8">Your thoughts.<br /><em>Part of the conversation.</em></h2><p className="section-intro mt-7">Choose what your note is about, write it down, and tell us anything else you have in mind. In this first version your note is checked here in the browser only — it is not sent or saved yet.</p></div>
+  return <section id="feedback" className="feedback-section" aria-labelledby="feedback-title"><div className="page-width feedback-layout"><div><ChapterLabel number="09">Leave an archive note</ChapterLabel><h2 id="feedback-title" className="section-title mt-8">Your thoughts.<br /><em>Part of the conversation.</em></h2><p className="section-intro mt-7">Give the archive a rating and write your note. In this first version your note is checked here in the browser only — it is not sent or saved yet.</p></div>
     <form className="archive-note" noValidate onSubmit={submit}>
       <fieldset disabled={!ready}>
         <span className="eyebrow text-gold">Archive correspondence</span>
-        <fieldset className="feedback-choices" style={{ marginTop: 18 }}>
-          <legend>What is your note about?</legend>
-          {feedbackCategories.map(item => <label key={item} className={category === item ? 'chosen' : ''}>
-            <input type="radio" name="feedback-category" value={item} checked={category === item} onChange={() => { setCategory(item); setProblem(''); setChecked(false) }} />
-            {item}
-          </label>)}
+        <fieldset className="feedback-rating" style={{ marginTop: 18 }}>
+          <legend>Your rating</legend>
+          <div className="feedback-stars" role="radiogroup" aria-label="Your rating from one to five stars">
+            {[1, 2, 3, 4, 5].map(value => <label key={value} className={rating >= value ? 'star-lit' : ''} title={`${value} of 5`}>
+              <input type="radio" name="feedback-rating" value={value} checked={rating === value} onChange={() => { setRating(value); setProblem(''); setChecked(false) }} />
+              <Star size={22} aria-hidden="true" />
+              <span className="sr-only">{value} of 5</span>
+            </label>)}
+          </div>
+          <span className="feedback-rating-value">{rating ? `${rating} of 5` : 'No rating chosen yet'}</span>
         </fieldset>
         <label htmlFor="feedback-message">Your note</label>
         <textarea id="feedback-message" value={message} required minLength={5} maxLength={2000} rows={5} placeholder="Write your note…" onChange={event => { setMessage(event.target.value); setChecked(false) }} />
         <div className="note-bottom"><span>{message.length} / 2,000</span><button type="submit">Submit your note <ArrowUpRight size={16} aria-hidden="true" /></button></div>
-        <div className="feedback-final">
-          <p><label htmlFor="feedback-extra">Finally — is there anything else you would like to share?</label></p>
-          <textarea id="feedback-extra" value={extra} rows={3} maxLength={2000} placeholder="Any other thoughts, memories or suggestions… (optional)" onChange={event => { setExtra(event.target.value); setChecked(false) }} />
-        </div>
         {shown && <p id="feedback-error" role="alert" className="form-message">{shown}</p>}
         {checked && <div role="status" className="form-message"><strong>Thank you for your feedback!</strong><p>This demonstration version checks your note here in the browser only — nothing is sent or saved.</p></div>}
       </fieldset>

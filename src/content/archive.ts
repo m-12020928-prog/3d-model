@@ -157,7 +157,6 @@ export const faq = [
   { question: 'Are the archive photographs real?', answer: 'Every frame in the Memory Tunnel shows a real photograph from the band archive. Dates and captions are published only when they have been confirmed, so some pictures are described by what is visible in them.' },
   { question: 'Can I listen to recordings here?', answer: 'Yes. Use the player in the Sound Room to play the band recording supplied for this version.' },
 ]
-export const feedbackCategories = ['Website experience', 'Archive information', 'Other feedback']
 // 隧道中可用的真实照片。未列出的画框显示“待补照片”版面，不伪造内容。
 export const tunnelPhotos: Photo[] = [...memoryPhotos, ...nationalDay2023Photos, ...sportsDayPhotos, ...orientationPhotos, ...heroGallery, ...leaders.map(leader => leader.photo), ...hextarPhotos, ...carnivalPhotos, ...farewellPhotos, ...kemOnePhotos, ...kemTwoPhotos, ...miwFestPhotos]
 // 章节主题只是空间节奏的名称，不代表已核实的活动或年份。
