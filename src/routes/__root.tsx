@@ -9,7 +9,7 @@ export const Route = createRootRoute({
   // (src/seo.config.ts). A page that wants its own title sets head() in its own route file.
   head: (ctx) => {
     const seo = seoHead(ctx)
-    return { ...seo, links: [...seo.links, { rel: 'preconnect', href: 'https://fonts.googleapis.com' }, { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossOrigin: 'anonymous' }, { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@400;500;600&family=IBM+Plex+Mono:wght@400&family=Playfair+Display:ital,wght@0,400;0,600;1,400&display=swap' }, { rel: 'stylesheet', href: appCss }] }
+    return { ...seo, links: [...seo.links, { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Montserrat:wght@400;450;500;550;600;650;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap' }, { rel: 'stylesheet', href: appCss }] }
   },
   shellComponent: RootDocument,
   component: RootLayout,
@@ -22,7 +22,7 @@ function RootDocument({ children }: { children: ReactNode }) {
       <head>
         <HeadContent />
       </head>
-      <body className="editorial-site min-h-screen antialiased">
+      <body className="min-h-screen bg-midnight text-parchment antialiased">
         {children}
         <Scripts />
       </body>

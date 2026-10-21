@@ -8,18 +8,24 @@ import { INSTRUMENT_MODELS } from '@/content/instrument-models'
 import { lookAt, multiply, perspective } from './gl/matrix'
 import type { Vec3 } from './gl/matrix'
 
+// 展台只用原生 WebGL 显示乐器模型：先按整体包围盒居中并缩放，
+// 因此无论模型原始尺寸多大，都会完整落在镜头里。可拖动旋转、用按钮或方向键缩放。
+// 不再标注"部件"：模型只负责真实呈现乐器外观。
 const VERTEX = `
 attribute vec3 a_position;
 attribute vec3 a_normal;
+uniform mat4 u_model;
 uniform mat4 u_viewProj;
 varying vec3 v_normal;
 varying vec3 v_world;
 void main() {
-  v_world = a_position;
-  v_normal = a_normal;
-  gl_Position = u_viewProj * vec4(a_position, 1.0);
+  vec4 world = u_model * vec4(a_position, 1.0);
+  v_world = world.xyz;
+  v_normal = (u_model * vec4(a_normal, 0.0)).xyz;
+  gl_Position = u_viewProj * world;
 }`
-// 不用霓虹或泛光；解析式柔光箱营造棚灯反射，保留铜、银与哑光木管的差异。
+
+// 金属靠环境反射才像金属：这里用三段渐变的天光、一盏金色反射和清漆高光模拟展台布光。
 const FRAGMENT = `
 precision highp float;
 varying vec3 v_normal;
@@ -31,256 +37,294 @@ uniform float u_rough;
 void main() {
   vec3 n = normalize(v_normal);
   vec3 v = normalize(u_eye - v_world);
-  if (dot(n, v) < 0.0) n = -n;
-  vec3 keyDir = normalize(vec3(0.5, 0.85, 0.65));
-  vec3 fillDir = normalize(vec3(-0.8, 0.3, 0.45));
-  vec3 rimDir = normalize(vec3(0.2, 0.3, -0.9));
-  vec3 base = pow(u_color, vec3(2.2));
-  float rough = clamp(u_rough, 0.12, 1.0);
+  if (dot(n, v) < 0.0) { n = -n; }
+  vec3 keyDir = normalize(vec3(0.34, 0.92, 0.46));
+  vec3 fillDir = normalize(vec3(-0.82, 0.16, 0.34));
+  vec3 backDir = normalize(vec3(-0.12, 0.42, -0.94));
   float key = max(dot(n, keyDir), 0.0);
   float fill = max(dot(n, fillDir), 0.0);
+  float back = max(dot(n, backDir), 0.0);
   vec3 r = reflect(-v, n);
   float sky = clamp(r.y * 0.5 + 0.5, 0.0, 1.0);
-  vec3 env = mix(vec3(0.055, 0.07, 0.095), vec3(0.3, 0.34, 0.4), sky);
-  float softbox = pow(max(dot(r, keyDir), 0.0), mix(42.0, 4.0, rough));
-  float strip = pow(max(dot(r, fillDir), 0.0), mix(90.0, 7.0, rough));
-  env += vec3(0.94, 0.79, 0.57) * softbox * 1.65;
-  env += vec3(0.52, 0.65, 0.8) * strip * 0.8;
-  env += vec3(0.27, 0.07, 0.065) * pow(max(dot(r, rimDir), 0.0), 4.0) * 0.2;
-  vec3 f0 = mix(vec3(0.04), base, u_metal);
-  vec3 fresnel = f0 + (1.0 - f0) * pow(1.0 - max(dot(n, v), 0.0), 5.0);
-  vec3 diffuse = base * (vec3(0.22, 0.25, 0.3) + key * vec3(1.1, 0.92, 0.7) + fill * vec3(0.15, 0.2, 0.28));
-  vec3 color = diffuse * (1.0 - u_metal) + env * fresnel;
-  float spec = pow(max(dot(n, normalize(keyDir + v)), 0.0), mix(100.0, 8.0, rough));
-  color += f0 * spec * (1.0 - rough) * 0.7;
-  color = color / (1.0 + color * 0.45);
-  gl_FragColor = vec4(pow(max(color, vec3(0.0)), vec3(1.0 / 2.2)), 1.0);
+  vec3 env = mix(vec3(0.035, 0.042, 0.055), mix(vec3(0.13, 0.16, 0.21), vec3(0.48, 0.54, 0.62), pow(sky, 2.0)), sky);
+  float sheen = pow(max(dot(r, keyDir), 0.0), mix(4.0, 42.0, 1.0 - u_rough));
+  env += vec3(0.78, 0.64, 0.42) * sheen * 0.6;
+  float fres = pow(1.0 - max(dot(n, v), 0.0), 3.0);
+  vec3 diffuse = u_color * (0.15 + key * 1.02 + fill * 0.26 + back * 0.34);
+  vec3 spec = vec3(1.0, 0.95, 0.86) * pow(max(dot(n, normalize(keyDir + v)), 0.0), mix(64.0, 8.0, u_rough));
+  vec3 lacquer = env * (0.45 + u_color) + u_color * key * 0.4 + spec * 0.95;
+  vec3 color = mix(diffuse + spec * 0.28, lacquer, u_metal);
+  color += vec3(0.44, 0.57, 0.72) * fres * (0.1 + u_metal * 0.32);
+  color = color / (1.0 + color * 0.42);
+  gl_FragColor = vec4(color, 1.0);
 }`
 
 type Camera = { yaw: number; pitch: number; dist: number; intro: number }
-type DrawPart = { position: WebGLBuffer; normal: WebGLBuffer; index: WebGLBuffer; count: number; color: Float32Array; metal: number; rough: number; type: number }
-type Props = { instrument: Instrument; firstReveal?: boolean; onIntroDone?: () => void }
-const START: Camera = { yaw: -0.6, pitch: 0.04, dist: 3.05, intro: 1 }
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+type Program = { program: WebGLProgram; use(): void; u(name: string): WebGLUniformLocation | null; a(name: string): number }
+type DrawPart = { position: WebGLBuffer; normal: WebGLBuffer; index: WebGLBuffer; count: number; color: [number, number, number]; metal: number; rough: number; type: number }
 
-function createSurface(gl: WebGLRenderingContext) {
-  const shaders: WebGLShader[] = []
-  const program = gl.createProgram()
-  if (!program) throw new Error('Display unavailable')
-  try {
-    for (const [type, source] of [[gl.VERTEX_SHADER, VERTEX], [gl.FRAGMENT_SHADER, FRAGMENT]] as const) {
-      const shader = gl.createShader(type)
-      if (!shader) throw new Error('Display unavailable')
-      shaders.push(shader)
-      gl.shaderSource(shader, source)
-      gl.compileShader(shader)
-      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error('Display unavailable')
-      gl.attachShader(program, shader)
-    }
-    gl.linkProgram(program)
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error('Display unavailable')
-    return program
-  } catch (error) { gl.deleteProgram(program); throw error }
-  finally { shaders.forEach(shader => gl.deleteShader(shader)) }
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+const START: Camera = { yaw: -0.6, pitch: 0.04, dist: 3.05, intro: 0 }
+
+function shader(gl: WebGLRenderingContext, type: number, source: string): WebGLShader | null {
+  const shaderObject = gl.createShader(type)
+  if (!shaderObject) return null
+  gl.shaderSource(shaderObject, source)
+  gl.compileShader(shaderObject)
+  if (!gl.getShaderParameter(shaderObject, gl.COMPILE_STATUS)) { gl.deleteShader(shaderObject); return null }
+  return shaderObject
 }
 
-export function InstrumentStage({ instrument, firstReveal = true, onIntroDone }: Props) {
+function program(gl: WebGLRenderingContext): Program | null {
+  const result = gl.createProgram()
+  if (!result) return null
+  const vertex = shader(gl, gl.VERTEX_SHADER, VERTEX)
+  const fragment = shader(gl, gl.FRAGMENT_SHADER, FRAGMENT)
+  if (!vertex || !fragment) return null
+  gl.attachShader(result, vertex); gl.attachShader(result, fragment); gl.linkProgram(result)
+  if (!gl.getProgramParameter(result, gl.LINK_STATUS)) { gl.deleteProgram(result); return null }
+  return {
+    program: result,
+    use: () => gl.useProgram(result),
+    u: (name: string) => gl.getUniformLocation(result, name),
+    a: (name: string) => gl.getAttribLocation(result, name),
+  }
+}
+
+type StageProps = { instrument: Instrument; firstReveal?: boolean; onIntroDone?: () => void }
+
+export function InstrumentStage({ instrument, firstReveal = true, onIntroDone }: StageProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const camera = useRef<Camera>({ ...START })
-  const callback = useRef(onIntroDone)
-  const first = useRef(firstReveal)
-  const interacted = useRef(false)
-  const command = useRef<(kind: 'closer' | 'further' | 'reset' | 'skip') => void>(() => {})
+  const introCallback = useRef(onIntroDone)
   const [failed, setFailed] = useState(false)
   const [custom, setCustom] = useState<InstrumentModel | null>(null)
   const [customError, setCustomError] = useState(false)
-  const [intro, setIntro] = useState(false)
-  const [attempt, setAttempt] = useState(0)
-  const [contextVersion, setContextVersion] = useState(0)
-  const config = INSTRUMENT_MODELS[instrument.id]
-  useEffect(() => { callback.current = onIntroDone }, [onIntroDone])
+
+  const modelConfig = INSTRUMENT_MODELS[instrument.id]
   useEffect(() => {
+    setCustom(null)
+    setCustomError(false)
+    const config = INSTRUMENT_MODELS[instrument.id]
+    if (!config) return
     let cancelled = false
-    setCustom(null); setCustomError(false)
-    const model = INSTRUMENT_MODELS[instrument.id]
-    if (model) void loadInstrumentModel(model.url, { body: model.body, finishes: model.finishes })
-      .then(value => { if (!cancelled) setCustom(value) })
+    loadInstrumentModel(config.url, { body: config.body, finishes: config.finishes })
+      .then(loaded => { if (!cancelled) setCustom(loaded) })
       .catch(() => { if (!cancelled) setCustomError(true) })
     return () => { cancelled = true }
-  }, [instrument.id, attempt])
+  }, [instrument.id])
+
+  useEffect(() => { introCallback.current = onIntroDone }, [onIntroDone])
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     setFailed(false)
     let gl: WebGLRenderingContext | null = null
-    try { gl = canvas.getContext('webgl', { alpha: true, antialias: true, premultipliedAlpha: true }) } catch { /* 状态面板说明 */ }
+    try {
+      gl = (canvas.getContext('webgl', { alpha: true, antialias: true, premultipliedAlpha: true }) ?? canvas.getContext('experimental-webgl')) as WebGLRenderingContext | null
+    } catch { gl = null }
     if (!gl) { setFailed(true); return }
     const context = gl
-    const buffers: WebGLBuffer[] = []
+
+    const surface = program(context)
+    if (!surface) { setFailed(true); return }
+
+    const model = custom ?? instrumentModel(instrument.id)
+    const uintExt = context.getExtension('OES_element_index_uint')
+    if (!model || model.meshes.length === 0) { setFailed(true); return }
+
+    // 整体包围盒：把模型居中并缩放到统一的展示尺寸。
+    let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity
+    for (const item of model.meshes) {
+      const positions = item.mesh.positions
+      for (let i = 0; i < positions.length; i += 3) {
+        if (positions[i] < minX) minX = positions[i]
+        if (positions[i] > maxX) maxX = positions[i]
+        if (positions[i + 1] < minY) minY = positions[i + 1]
+        if (positions[i + 1] > maxY) maxY = positions[i + 1]
+        if (positions[i + 2] < minZ) minZ = positions[i + 2]
+        if (positions[i + 2] > maxZ) maxZ = positions[i + 2]
+      }
+    }
+    const largest = Math.max(maxX - minX, maxY - minY, maxZ - minZ)
+    const scale = Number.isFinite(largest) && largest > 0.0001 ? 1.75 / largest : 1
+    const centreX = (minX + maxX) / 2
+    const centreY = (minY + maxY) / 2
+    const centreZ = (minZ + maxZ) / 2
+
     const parts: DrawPart[] = []
-    let surface: WebGLProgram
     try {
-      surface = createSurface(context)
-    } catch { setFailed(true); return }
-    const cleanupGpu = () => { buffers.forEach(buffer => context.deleteBuffer(buffer)); context.deleteProgram(surface) }
-    try {
-      const model = custom ?? instrumentModel(instrument.id)
-      if (!model.meshes.length) throw new Error('No geometry')
-      const min = [Infinity, Infinity, Infinity]
-      const max = [-Infinity, -Infinity, -Infinity]
-      for (const item of model.meshes) for (let i = 0; i < item.mesh.positions.length; i++) {
-        const axis = i % 3
-        min[axis] = Math.min(min[axis], item.mesh.positions[i]); max[axis] = Math.max(max[axis], item.mesh.positions[i])
-      }
-      const extent = Math.max(...max.map((value, i) => value - min[i]))
-      if (!Number.isFinite(extent) || extent <= 0) throw new Error('No geometry')
-      const scale = 1.75 / extent
-      const center = max.map((value, i) => (value + min[i]) / 2)
-      const wideSupported = context.getExtension('OES_element_index_uint')
-      const buffer = (target: number, data: Float32Array | Uint16Array | Uint32Array) => {
-        const result = context.createBuffer()
-        if (!result) throw new Error('Display memory unavailable')
-        buffers.push(result); context.bindBuffer(target, result); context.bufferData(target, data, context.STATIC_DRAW)
-        return result
-      }
       for (const item of model.meshes) {
-        const wide = item.mesh.indices instanceof Uint32Array
-        if (wide && !wideSupported) throw new Error('Large meshes unavailable')
         const source = item.mesh.positions
         const positions = new Float32Array(source.length)
-        for (let i = 0; i < source.length; i++) positions[i] = (source[i] - center[i % 3]) * scale
-        const look = item.look ?? MATERIALS[item.material]
-        parts.push({ position: buffer(context.ARRAY_BUFFER, positions), normal: buffer(context.ARRAY_BUFFER, item.mesh.normals), index: buffer(context.ELEMENT_ARRAY_BUFFER, item.mesh.indices), count: item.mesh.indices.length, type: wide ? context.UNSIGNED_INT : context.UNSIGNED_SHORT, color: new Float32Array(look.color), metal: look.metal, rough: look.rough })
+        for (let i = 0; i < source.length; i += 3) {
+          positions[i] = (source[i] - centreX) * scale
+          positions[i + 1] = (source[i + 1] - centreY) * scale
+          positions[i + 2] = (source[i + 2] - centreZ) * scale
+        }
+        const positionBuffer = context.createBuffer()
+        const normalBuffer = context.createBuffer()
+        const indexBuffer = context.createBuffer()
+        if (!positionBuffer || !normalBuffer || !indexBuffer) throw new Error('buffer')
+        context.bindBuffer(context.ARRAY_BUFFER, positionBuffer)
+        context.bufferData(context.ARRAY_BUFFER, positions, context.STATIC_DRAW)
+        context.bindBuffer(context.ARRAY_BUFFER, normalBuffer)
+        context.bufferData(context.ARRAY_BUFFER, item.mesh.normals, context.STATIC_DRAW)
+        context.bindBuffer(context.ELEMENT_ARRAY_BUFFER, indexBuffer)
+        const wide = item.mesh.indices instanceof Uint32Array
+        if (wide && !uintExt) throw new Error('uint indices')
+        context.bufferData(context.ELEMENT_ARRAY_BUFFER, item.mesh.indices, context.STATIC_DRAW)
+        const material = item.look ?? MATERIALS[item.material]
+        parts.push({ position: positionBuffer, normal: normalBuffer, index: indexBuffer, count: item.mesh.indices.length, color: material.color, metal: material.metal, rough: material.rough, type: wide ? context.UNSIGNED_INT : context.UNSIGNED_SHORT })
       }
-    } catch { cleanupGpu(); setFailed(true); return }
+    } catch { setFailed(true); return }
 
-    const motion = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const fine = window.matchMedia('(hover: hover) and (pointer: fine)')
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const view = camera.current
-    Object.assign(view, START)
-    view.intro = custom && first.current && !interacted.current && !motion.matches ? 0 : 1
-    setIntro(view.intro < 1)
-    const finish = () => {
-      view.intro = 1; setIntro(false)
-      if (custom && first.current) { first.current = false; callback.current?.() }
-    }
-    if (custom && view.intro === 1) finish()
-    let frame = 0
-    let visible = true
-    let disposed = false
-    let previous = 0
-    let pointer: { x: number; y: number } | null = null
-    let targetX = 0, targetY = 0, offsetX = 0, offsetY = 0
-    const position = context.getAttribLocation(surface, 'a_position')
-    const normal = context.getAttribLocation(surface, 'a_normal')
-    const locations = Object.fromEntries(['u_viewProj', 'u_eye', 'u_color', 'u_metal', 'u_rough'].map(name => [name, context.getUniformLocation(surface, name)]))
-    context.enable(context.DEPTH_TEST); context.depthFunc(context.LEQUAL); context.disable(context.CULL_FACE)
+    view.yaw = START.yaw
+    view.pitch = START.pitch
+    view.dist = START.dist
+    view.intro = reduced || !firstReveal ? 1 : 0
+    if (view.intro >= 1) introCallback.current?.()
+
+    context.enable(context.DEPTH_TEST)
+    context.depthFunc(context.LEQUAL)
+    context.disable(context.CULL_FACE)
     context.clearColor(0, 0, 0, 0)
-    const requestDraw = () => { if (!disposed && visible && !document.hidden && !frame) frame = requestAnimationFrame(draw) }
-    function draw(now: number) {
-      frame = 0
-      if (disposed || !visible || document.hidden) { previous = 0; return }
-      const width = canvas!.clientWidth, height = canvas!.clientHeight
-      if (!width || !height) return
-      const delta = previous ? Math.min((now - previous) / 1000, 0.05) : 0
+    const identity = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
+
+    let frame = 0
+    let previous = performance.now()
+    let drawnFrames = 0
+    let pointer: { x: number; y: number } | null = null
+
+    const onPointerDown = (event: PointerEvent) => { pointer = { x: event.clientX, y: event.clientY }; view.intro = 1; canvas.setPointerCapture(event.pointerId) }
+    const onPointerMove = (event: PointerEvent) => {
+      if (!pointer) return
+      view.yaw -= (event.clientX - pointer.x) * 0.0085
+      view.pitch = clamp(view.pitch + (event.clientY - pointer.y) * 0.004, -0.5, 0.5)
+      pointer = { x: event.clientX, y: event.clientY }
+    }
+    const onPointerUp = () => { pointer = null }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'ArrowLeft') view.yaw += 0.14
+      else if (event.key === 'ArrowRight') view.yaw -= 0.14
+      else if (event.key === 'ArrowUp') view.dist = clamp(view.dist - 0.28, 1.85, 4.6)
+      else if (event.key === 'ArrowDown') view.dist = clamp(view.dist + 0.28, 1.85, 4.6)
+      else return
+      event.preventDefault()
+      view.intro = 1
+    }
+    canvas.addEventListener('pointerdown', onPointerDown)
+    canvas.addEventListener('pointermove', onPointerMove)
+    canvas.addEventListener('pointerup', onPointerUp)
+    canvas.addEventListener('pointercancel', onPointerUp)
+    canvas.addEventListener('keydown', onKeyDown)
+
+    const render = (now: number) => {
+      frame = requestAnimationFrame(render)
+      const delta = Math.min((now - previous) / 1000, 0.05)
       previous = now
-      const ratio = Math.min(window.devicePixelRatio || 1, width < 600 ? 1.5 : 1.75)
-      const w = Math.round(width * ratio), h = Math.round(height * ratio)
-      if (canvas!.width !== w || canvas!.height !== h) { canvas!.width = w; canvas!.height = h }
+      const width = canvas.clientWidth
+      const height = canvas.clientHeight
+      if (!width || !height) return
+      const ratio = Math.min(window.devicePixelRatio || 1, 2)
+      const pixelWidth = Math.round(width * ratio)
+      const pixelHeight = Math.round(height * ratio)
+      if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) { canvas.width = pixelWidth; canvas.height = pixelHeight }
       if (view.intro < 1) {
-        view.intro = Math.min(1, view.intro + delta / 4.4)
-        if (view.intro === 1) finish()
+        view.intro = Math.min(1, view.intro + delta / 2.4)
+        if (view.intro >= 1) introCallback.current?.()
       }
-      if (motion.matches) { offsetX = 0; offsetY = 0 }
-      else { offsetX += (targetX - offsetX) * 0.16; offsetY += (targetY - offsetY) * 0.16 }
       const eased = view.intro * view.intro * (3 - 2 * view.intro)
-      const distance = 4.2 + (view.dist - 4.2) * eased
-      const yaw = -1.15 + (view.yaw + 1.15) * eased + offsetX
-      const eye: Vec3 = [Math.sin(yaw) * distance, 0.24 + view.pitch * 1.5 + offsetY, Math.cos(yaw) * distance]
-      context.viewport(0, 0, w, h); context.clear(context.COLOR_BUFFER_BIT | context.DEPTH_BUFFER_BIT); context.useProgram(surface)
-      context.uniformMatrix4fv(locations.u_viewProj, false, multiply(perspective(0.72, width / height, 0.1, 40), lookAt(eye, [0, 0, 0])))
-      context.uniform3fv(locations.u_eye, eye)
+      const distance = 4.7 + (view.dist - 4.7) * eased
+      const yaw = -1.35 + (view.yaw + 1.35) * eased
+
+      context.viewport(0, 0, canvas.width, canvas.height)
+      context.clear(context.COLOR_BUFFER_BIT | context.DEPTH_BUFFER_BIT)
+      const projection = perspective(0.72, width / height, 0.1, 40)
+      const eye: Vec3 = [Math.sin(yaw) * distance, 0.34 + view.pitch * 1.5, Math.cos(yaw) * distance]
+      const viewProjection = multiply(projection, lookAt(eye, [0, 0, 0]))
+
+      surface.use()
+      context.uniformMatrix4fv(surface.u('u_model'), false, identity)
+      context.uniformMatrix4fv(surface.u('u_viewProj'), false, viewProjection)
+      context.uniform3fv(surface.u('u_eye'), new Float32Array(eye))
       for (const part of parts) {
-        context.bindBuffer(context.ARRAY_BUFFER, part.position); context.vertexAttribPointer(position, 3, context.FLOAT, false, 0, 0); context.enableVertexAttribArray(position)
-        context.bindBuffer(context.ARRAY_BUFFER, part.normal); context.vertexAttribPointer(normal, 3, context.FLOAT, false, 0, 0); context.enableVertexAttribArray(normal)
+        const positionLocation = surface.a('a_position')
+        context.bindBuffer(context.ARRAY_BUFFER, part.position)
+        context.vertexAttribPointer(positionLocation, 3, context.FLOAT, false, 0, 0)
+        context.enableVertexAttribArray(positionLocation)
+        const normalLocation = surface.a('a_normal')
+        context.bindBuffer(context.ARRAY_BUFFER, part.normal)
+        context.vertexAttribPointer(normalLocation, 3, context.FLOAT, false, 0, 0)
+        context.enableVertexAttribArray(normalLocation)
         context.bindBuffer(context.ELEMENT_ARRAY_BUFFER, part.index)
-        context.uniform3fv(locations.u_color, part.color); context.uniform1f(locations.u_metal, part.metal); context.uniform1f(locations.u_rough, part.rough)
+        context.uniform3fv(surface.u('u_color'), new Float32Array(part.color))
+        context.uniform1f(surface.u('u_metal'), part.metal)
+        context.uniform1f(surface.u('u_rough'), part.rough)
         context.drawElements(context.TRIANGLES, part.count, part.type, 0)
       }
-      if (view.intro < 1 || Math.abs(targetX - offsetX) + Math.abs(targetY - offsetY) > 0.0003) requestDraw()
-      else previous = 0
+      drawnFrames += 1
     }
-    const takeOver = () => { interacted.current = true; finish(); targetX = 0; targetY = 0 }
-    command.current = kind => {
-      takeOver()
-      if (kind === 'closer') view.dist = clamp(view.dist - 0.38, 1.85, 4.6)
-      if (kind === 'further') view.dist = clamp(view.dist + 0.38, 1.85, 4.6)
-      if (kind === 'reset') Object.assign(view, START)
-      requestDraw()
-    }
-    const onDown = (event: PointerEvent) => { if (event.button !== 0) return; takeOver(); pointer = { x: event.clientX, y: event.clientY }; canvas.setPointerCapture(event.pointerId); requestDraw() }
-    const onMove = (event: PointerEvent) => {
-      if (pointer) {
-        view.yaw -= (event.clientX - pointer.x) * 0.0085
-        view.pitch = clamp(view.pitch + (event.clientY - pointer.y) * 0.004, -0.5, 0.5)
-        pointer = { x: event.clientX, y: event.clientY }
-      } else if (fine.matches && !motion.matches && view.intro === 1) {
-        const rect = canvas.getBoundingClientRect()
-        targetX = ((event.clientX - rect.left) / rect.width - 0.5) * 0.065
-        targetY = -((event.clientY - rect.top) / rect.height - 0.5) * 0.04
-      }
-      requestDraw()
-    }
-    const onUp = () => { pointer = null }
-    const onLeave = () => { targetX = 0; targetY = 0; requestDraw() }
-    const onWheel = (event: WheelEvent) => {
-      if (document.activeElement !== canvas) return
-      event.preventDefault(); takeOver()
-      view.dist = clamp(view.dist + event.deltaY * 0.0025, 1.85, 4.6); requestDraw()
-    }
-    const onKey = (event: KeyboardEvent) => {
-      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home'].includes(event.key)) return
-      event.preventDefault(); takeOver()
-      if (event.key === 'ArrowLeft') view.yaw += 0.14
-      if (event.key === 'ArrowRight') view.yaw -= 0.14
-      if (event.key === 'ArrowUp') view.dist = clamp(view.dist - 0.28, 1.85, 4.6)
-      if (event.key === 'ArrowDown') view.dist = clamp(view.dist + 0.28, 1.85, 4.6)
-      if (event.key === 'Home') Object.assign(view, START)
-      requestDraw()
-    }
-    const onVisibility = () => { previous = 0; if (document.hidden) { cancelAnimationFrame(frame); frame = 0 } else requestDraw() }
-    const onMotion = () => { if (motion.matches) { finish(); targetX = 0; targetY = 0 }; requestDraw() }
-    const onLost = (event: Event) => { event.preventDefault(); cancelAnimationFrame(frame); frame = 0; setFailed(true) }
-    const onRestored = () => setContextVersion(value => value + 1)
-    const observer = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; previous = 0; if (!visible) { cancelAnimationFrame(frame); frame = 0 } else requestDraw() }, { rootMargin: '60px' })
-    observer.observe(canvas)
-    const resize = new ResizeObserver(requestDraw); resize.observe(canvas)
-    canvas.addEventListener('pointerdown', onDown); canvas.addEventListener('pointermove', onMove); canvas.addEventListener('pointerup', onUp); canvas.addEventListener('pointercancel', onUp); canvas.addEventListener('lostpointercapture', onUp); canvas.addEventListener('pointerleave', onLeave); canvas.addEventListener('keydown', onKey)
-    canvas.addEventListener('wheel', onWheel, { passive: false })
-    canvas.addEventListener('webglcontextlost', onLost); canvas.addEventListener('webglcontextrestored', onRestored)
-    document.addEventListener('visibilitychange', onVisibility); motion.addEventListener('change', onMotion)
-    requestDraw()
-    return () => {
-      disposed = true; cancelAnimationFrame(frame); observer.disconnect(); resize.disconnect(); command.current = () => {}
-      canvas.removeEventListener('pointerdown', onDown); canvas.removeEventListener('pointermove', onMove); canvas.removeEventListener('pointerup', onUp); canvas.removeEventListener('pointercancel', onUp); canvas.removeEventListener('lostpointercapture', onUp); canvas.removeEventListener('pointerleave', onLeave); canvas.removeEventListener('keydown', onKey)
-      canvas.removeEventListener('wheel', onWheel)
-      canvas.removeEventListener('webglcontextlost', onLost); canvas.removeEventListener('webglcontextrestored', onRestored)
-      document.removeEventListener('visibilitychange', onVisibility); motion.removeEventListener('change', onMotion); cleanupGpu()
-    }
-  }, [instrument.id, custom, contextVersion])
+    frame = requestAnimationFrame(render)
 
-  return <div className={`instrument-stage stage-${instrument.id}`}>
-    <div className="stage-orbit orbit-one" aria-hidden="true" /><div className="stage-orbit orbit-two" aria-hidden="true" /><div className="stage-floor" aria-hidden="true" />
-    <span className="stage-coordinate eyebrow">Exhibit 0{['saxophone', 'french-horn', 'trumpet', 'clarinet'].indexOf(instrument.id) + 1} / {instrument.character}</span>
-    <span className="stage-word" aria-hidden="true">{instrument.character}</span>
-    <div className="instrument-canvas-wrap">
-      {!custom && !failed && <span className="stage-badge">Illustrative fallback</span>}
-      <canvas ref={canvasRef} className="instrument-canvas" tabIndex={0} role="img" aria-label={`Three-dimensional ${instrument.name}. Drag or use Left and Right to rotate. Up and Down zoom; Home resets the view.`} />
-      {config && !custom && !failed && <div className="stage-load-note" role="status">{customError ? <>The model could not be loaded. An illustrative fallback is shown. <button type="button" className="stage-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></> : 'Loading the instrument. An illustrative fallback is shown meanwhile.'}</div>}
-      {intro && !failed && <button type="button" className="stage-button stage-intro-skip" onClick={() => command.current('skip')}>Skip intro</button>}
-      {failed ? <div className="model-placeholder" role="status"><span className="eyebrow">3D view unavailable</span><p>This browser could not display the instrument.</p><small>The instrument notes remain available.</small><button type="button" className="stage-button" onClick={() => setContextVersion(value => value + 1)}>Try 3D again</button></div> : <div className="stage-controls"><span className="stage-hint eyebrow">Drag to turn · Arrow keys to explore</span><div className="stage-buttons"><button type="button" className="stage-button" aria-label="Move closer" onClick={() => command.current('closer')}><ChevronUp size={14} /></button><button type="button" className="stage-button" aria-label="Move further away" onClick={() => command.current('further')}><ChevronDown size={14} /></button><button type="button" className="stage-button" aria-label="Reset the view" onClick={() => command.current('reset')}><RefreshCw size={14} /></button></div></div>}
+    // 若一秒内一帧都没画出来（着色器或几何异常），如实显示不可用说明。
+    const watchdog = window.setTimeout(() => { if (drawnFrames === 0) setFailed(true) }, 1200)
+
+    return () => {
+      window.clearTimeout(watchdog)
+      cancelAnimationFrame(frame)
+      canvas.removeEventListener('pointerdown', onPointerDown)
+      canvas.removeEventListener('pointermove', onPointerMove)
+      canvas.removeEventListener('pointerup', onPointerUp)
+      canvas.removeEventListener('pointercancel', onPointerUp)
+      canvas.removeEventListener('keydown', onKeyDown)
+      context.deleteProgram(surface.program)
+      parts.forEach(part => { context.deleteBuffer(part.position); context.deleteBuffer(part.normal); context.deleteBuffer(part.index) })
+    }
+  }, [instrument.id, firstReveal, custom])
+
+  const zoom = (step: number) => { camera.current.dist = clamp(camera.current.dist + step, 1.85, 4.6); camera.current.intro = 1 }
+  const reset = () => { camera.current.yaw = START.yaw; camera.current.pitch = START.pitch; camera.current.dist = START.dist; camera.current.intro = 1 }
+
+  return (
+    <div className={`instrument-stage stage-${instrument.id}`}>
+      <div className="stage-orbit orbit-one" aria-hidden="true" />
+      <div className="stage-orbit orbit-two" aria-hidden="true" />
+      <div className="stage-floor" aria-hidden="true" />
+      <span className="stage-coordinate eyebrow">Exhibit 0{['saxophone', 'french-horn', 'trumpet', 'clarinet'].indexOf(instrument.id) + 1} / {instrument.character}</span>
+      <span className="stage-word" aria-hidden="true">{instrument.character}</span>
+      <div className="instrument-canvas-wrap">
+        {!custom && <span className="stage-badge">Illustrative 3D model · built for this archive</span>}
+        <canvas ref={canvasRef} className="instrument-canvas" tabIndex={0} role="img" aria-label={`Three-dimensional model of a ${instrument.name}. Drag to turn it, and use the buttons to move closer or further away.`} />
+        {modelConfig && !custom && (
+          <span className="stage-hint eyebrow absolute left-3 right-3 top-10 z-[3]" role="status" aria-live="polite">
+            {customError
+              ? 'The instrument model could not be read — showing the built-in illustration.'
+              : 'Loading the instrument model — the built-in illustration is shown meanwhile.'}
+          </span>
+        )}
+        {failed ? (
+          <div className="model-placeholder" role="status">
+            <span className="eyebrow text-gold">3D view unavailable</span>
+            <p>This browser could not start the 3D display.</p>
+            <small>The instrument notes on the left still work. A recent desktop browser will show the model.</small>
+          </div>
+        ) : (
+          <div className="stage-controls">
+            <span className="stage-hint eyebrow">Drag to turn the model · Arrow keys also work</span>
+            <div className="stage-buttons">
+              <button type="button" onClick={() => zoom(-0.42)} className="stage-button" aria-label="Move closer"><ChevronUp size={14} aria-hidden="true" /></button>
+              <button type="button" onClick={() => zoom(0.42)} className="stage-button" aria-label="Move further away"><ChevronDown size={14} aria-hidden="true" /></button>
+              <button type="button" onClick={reset} className="stage-button" aria-label="Reset the view"><RefreshCw size={13} aria-hidden="true" /></button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
-  </div>
+  )
 }
+
 export default InstrumentStage

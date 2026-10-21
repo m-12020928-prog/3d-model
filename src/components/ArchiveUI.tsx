@@ -10,7 +10,7 @@ export const sections = ['Home', 'Legacy', 'Instruments', 'Memories', 'Events', 
 const menuItems = [...sections, 'FAQ', 'Feedback']
 const idOf = (label: string) => label.toLowerCase().replace(' ', '-')
 
-export function ChapterLabel({ number, children }: { number: string; children: ReactNode }) { return <div className="chapter-label eyebrow flex items-center gap-4"><span className="text-gold">{number}</span><span className="h-px w-9 bg-gold/45" /><span>{children}</span></div> }
+export function ChapterLabel({ number, children }: { number: string; children: ReactNode }) { return <div className="eyebrow flex items-center gap-4"><span className="text-gold">{number}</span><span className="h-px w-9 bg-gold/45" /><span>{children}</span></div> }
 export function SectionLink({ id, children, className = '' }: { id: string; children: ReactNode; className?: string }) { return <Link to="/" hash={id} className={className}>{children}</Link> }
 
 export function Navigation() {
@@ -51,7 +51,7 @@ export function PhotoSurface({ photo, className = '', priority = false, onSelect
     <div className="photo-corner photo-corner-tl" /><div className="photo-corner photo-corner-br" />
     {photo.src && !failed
       ? <img src={photo.src} alt={photo.alt || photo.caption || photo.label} loading={priority ? 'eager' : 'lazy'} decoding="async" className="h-full w-full object-cover" onError={() => setFailed(true)} />
-      : <div className="photo-empty"><Image size={26} strokeWidth={.85} aria-hidden="true" /><span className="photo-label">{photo.label}</span><span className="eyebrow">{failed ? 'Image unavailable' : 'Photograph to be supplied'}</span></div>}
+      : <div className="photo-empty"><Image size={26} strokeWidth={.85} aria-hidden="true" /><span className="photo-label">{photo.label}</span></div>}
     {onSelect && <span className="photo-arrow" aria-hidden="true"><ArrowUpRight size={15} strokeWidth={1} /></span>}
   </>
   if (onSelect) return <button type="button" onClick={onSelect} className={`photo-surface ${className}`} aria-label={`Open the archive note for ${photo.label}`}>{body}</button>
@@ -69,7 +69,7 @@ export function PhotoPanel({ photo, close }: { photo: Photo | null; close: () =>
     return () => { window.removeEventListener('keydown', key); previous?.focus({ preventScroll: true }) }
   }, [photo, close])
   if (!photo) return null
-  return <aside className="photo-panel" role="dialog" aria-modal="false" aria-labelledby="photo-title"><div className="flex items-center justify-between gap-3"><span className="eyebrow text-gold">Archive note</span><button type="button" ref={closeRef} className="icon-button" onClick={close} aria-label="Close photo information"><X size={20} /></button></div><h3 id="photo-title" className="mt-8 text-3xl font-display">{photo.label}</h3><dl className="metadata"><dt>Caption</dt><dd>{photo.caption || photo.label}</dd><dt>Event</dt><dd>{photo.event || 'Not yet provided'}</dd><dt>Date</dt><dd>{photo.date || 'Not yet provided'}</dd></dl></aside>
+  return <aside className="photo-panel" role="dialog" aria-modal="false" aria-labelledby="photo-title"><div className="flex items-center justify-between gap-3"><span className="eyebrow text-gold">Archive note</span><button type="button" ref={closeRef} className="icon-button" onClick={close} aria-label="Close photo information"><X size={20} /></button></div><h3 id="photo-title" className="mt-8 text-3xl font-display">{photo.label}</h3><dl className="metadata"><dt>Caption</dt><dd>{photo.caption || photo.label}</dd><dt>Event</dt><dd>{photo.event || '—'}</dd><dt>Date</dt><dd>{photo.date || '—'}</dd></dl></aside>
 }
 
 export function ScrollCue({ id, text }: { id: string; text: string }) { return <SectionLink id={id} className="scroll-cue"><span>{text}</span><ArrowDown size={16} /></SectionLink> }
