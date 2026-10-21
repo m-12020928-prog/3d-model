@@ -1,13 +1,18 @@
 // 简易 GLB（glTF 2.0 二进制）加载器：读取网格、节点变换与基础颜色/金属度/粗糙度。
 // 不支持 Draco/Meshopt 压缩、骨骼动画与贴图；遇到时抛出明确错误，由调用方改用内置模型。
+// 导入模型时按节点名与网格名把部件对上（bell、valve、key 等），并按实际几何算出标记位置。
 import type { Vec3 } from './matrix'
-import type { InstrumentModel, PartMesh } from './instruments3d'
+import type { InstrumentModel, MaterialId, PartMesh } from './instruments3d'
+import { MATERIALS } from './instruments3d'
+
+type Node = { name?: string; children?: number[]; mesh?: number; matrix?: number[]; translation?: number[]; rotation?: number[]; scale?: number[] }
+type Primitive = { attributes: Record<string, number>; indices?: number; material?: number; mode?: number }
 
 type Json = {
   scene?: number
   scenes?: { nodes?: number[] }[]
-  nodes?: { children?: number[]; mesh?: number; matrix?: number[]; translation?: number[]; rotation?: number[]; scale?: number[] }[]
-  meshes?: { primitives: { attributes: Record<string, number>; indices?: number; material?: number; mode?: number }[] }[]
+  nodes?: Node[]
+  meshes?: { name?: string; primitives: Primitive[] }[]
   materials?: { pbrMetallicRoughness?: { baseColorFactor?: number[]; baseColorTexture?: unknown; metallicFactor?: number; roughnessFactor?: number } }[]
   accessors?: { bufferView?: number; byteOffset?: number; componentType: number; normalized?: boolean; count: number; type: string }[]
   bufferViews?: { buffer: number; byteOffset?: number; byteLength: number; byteStride?: number }[]
@@ -107,10 +112,43 @@ function smoothNormals(positions: Float32Array, indices: Uint32Array): Float32Ar
   return normals
 }
 
-/** anchorFractions：部件标记在模型包围盒内的相对位置（0–1），按新模型对齐吹嘴、颈管、按键、喇叭口。 */
-export function buildGlbModel(buffer: ArrayBuffer, anchorFractions: Record<string, Vec3>): InstrumentModel {
+// 名称里带木、黑檀、衬垫、钢件的部件改用对应材质，其余按铜管处理。
+function guessMaterial(hint: string): MaterialId {
+  if (/wood|ebony|body|joint|barrel|stock|timber/.test(hint)) return 'ebony'
+  if (/pad|leather|cork/.test(hint)) return 'pad'
+  if (/steel|silver|nickel|rod|screw|ring|spring|plate|key/.test(hint)) return 'steel'
+  return 'brass'
+}
+
+type Box = { min: Vec3; max: Vec3 }
+
+function grow(box: Box | undefined, positions: Float32Array): Box {
+  const target: Box = box ?? { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] }
+  for (let i = 0; i < positions.length; i += 3) {
+    for (let k = 0; k < 3; k++) {
+      if (positions[i + k] < target.min[k]) target.min[k] = positions[i + k]
+      if (positions[i + k] > target.max[k]) target.max[k] = positions[i + k]
+    }
+  }
+  return target
+}
+
+/**
+ * keywords：部件 id → 关键词。命中节点名或网格名的部件会被打上该 id，
+ * 标记位置由这个部件的实际包围盒中心算出，因此不需要手工猜测坐标。
+ */
+export function buildGlbModel(buffer: ArrayBuffer, keywords: Record<string, string[]> = {}): InstrumentModel {
   const { json, bin } = parse(buffer)
   const meshes: PartMesh[] = []
+  const boxes = new Map<string, Box>()
+  const terms = Object.entries(keywords).map(([id, words]) => [id, words.map(word => word.toLowerCase())] as const)
+
+  const matchPart = (hint: string): string | undefined => {
+    for (const [id, words] of terms) {
+      if (words.some(word => hint.includes(word))) return id
+    }
+    return undefined
+  }
 
   const visit = (nodeIndex: number, parent: Mat, depth: number) => {
     const node = json.nodes?.[nodeIndex]
@@ -119,8 +157,15 @@ export function buildGlbModel(buffer: ArrayBuffer, anchorFractions: Record<strin
       ? node.matrix
       : compose(node.translation ?? [0, 0, 0], node.rotation ?? [0, 0, 0, 1], node.scale ?? [1, 1, 1])
     const world = mul(parent, local)
+    const nodeName = (node.name ?? '').toLowerCase()
     if (node.mesh !== undefined) {
-      for (const primitive of json.meshes?.[node.mesh]?.primitives ?? []) {
+      const definition = json.meshes?.[node.mesh]
+      const meshName = (definition?.name ?? '').toLowerCase()
+      const hint = `${nodeName} ${meshName}`
+      const part = matchPart(hint)
+      const material = guessMaterial(hint)
+      const fallback = MATERIALS[material]
+      for (const primitive of definition?.primitives ?? []) {
         if (primitive.mode !== undefined && primitive.mode !== 4) continue
         const positionIndex = primitive.attributes.POSITION
         if (positionIndex === undefined) continue
@@ -146,10 +191,11 @@ export function buildGlbModel(buffer: ArrayBuffer, anchorFractions: Record<strin
         }
         const pbr = primitive.material !== undefined ? json.materials?.[primitive.material]?.pbrMetallicRoughness : undefined
         const factor = pbr?.baseColorFactor
-        const color: Vec3 = factor ? [factor[0], factor[1], factor[2]] : pbr?.baseColorTexture ? [0.78, 0.7, 0.55] : [0.82, 0.68, 0.44]
-        const metal = Math.min(1, Math.max(0, pbr?.metallicFactor ?? 0.9))
-        const rough = Math.min(0.9, Math.max(0.12, pbr?.roughnessFactor ?? 0.3))
-        meshes.push({ mesh: { positions, normals, indices }, material: 'brass', look: { color, metal, rough } })
+        const color: Vec3 = factor ? [factor[0], factor[1], factor[2]] : fallback.color
+        const metal = Math.min(1, Math.max(0, pbr?.metallicFactor ?? fallback.metal))
+        const rough = Math.min(0.9, Math.max(0.12, pbr?.roughnessFactor ?? fallback.rough))
+        meshes.push({ mesh: { positions, normals, indices }, material, look: { color, metal, rough }, part })
+        if (part) boxes.set(part, grow(boxes.get(part), positions))
       }
     }
     for (const child of node.children ?? []) visit(child, world, depth + 1)
@@ -159,32 +205,32 @@ export function buildGlbModel(buffer: ArrayBuffer, anchorFractions: Record<strin
   for (const root of roots) visit(root, IDENTITY, 0)
   if (meshes.length === 0) throw new Error('GLB contains no triangle meshes')
 
-  let min: Vec3 = [Infinity, Infinity, Infinity]
-  let max: Vec3 = [-Infinity, -Infinity, -Infinity]
-  for (const item of meshes) {
-    const p = item.mesh.positions
-    for (let i = 0; i < p.length; i += 3) {
-      for (let k = 0; k < 3; k++) {
-        if (p[i + k] < min[k]) min[k] = p[i + k]
-        if (p[i + k] > max[k]) max[k] = p[i + k]
-      }
-    }
-  }
   const anchors: Record<string, Vec3[]> = {}
-  for (const [id, f] of Object.entries(anchorFractions)) {
-    anchors[id] = [[min[0] + (max[0] - min[0]) * f[0], min[1] + (max[1] - min[1]) * f[1], min[2] + (max[2] - min[2]) * f[2]]]
+  for (const [id, box] of boxes) {
+    anchors[id] = [[(box.min[0] + box.max[0]) / 2, (box.min[1] + box.max[1]) / 2, (box.min[2] + box.max[2]) / 2]]
   }
-  return { meshes, anchors, partsKnown: false }
+  return { meshes, anchors, partsKnown: boxes.size > 0 }
 }
 
-export async function loadGlbModel(url: string, anchorFractions: Record<string, Vec3>, timeoutMs = 30000): Promise<InstrumentModel> {
-  const controller = new AbortController()
-  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    const response = await fetch(url, { signal: controller.signal })
-    if (!response.ok) throw new Error(`Model request failed (${response.status})`)
-    return buildGlbModel(await response.arrayBuffer(), anchorFractions)
-  } finally {
-    window.clearTimeout(timer)
-  }
+const cache = new Map<string, Promise<InstrumentModel>>()
+
+/** 同一个模型只下载一次；切换乐器再切回来不会重新请求。 */
+export function loadInstrumentModel(url: string, keywords: Record<string, string[]> = {}, timeoutMs = 60000): Promise<InstrumentModel> {
+  const key = `${url}|${Object.keys(keywords).join(',')}`
+  const cached = cache.get(key)
+  if (cached) return cached
+  const request = (async () => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    try {
+      const response = await fetch(url, { signal: controller.signal })
+      if (!response.ok) throw new Error(`Model request failed (${response.status})`)
+      return buildGlbModel(await response.arrayBuffer(), keywords)
+    } finally {
+      clearTimeout(timer)
+    }
+  })()
+  cache.set(key, request)
+  request.catch(() => cache.delete(key))
+  return request
 }

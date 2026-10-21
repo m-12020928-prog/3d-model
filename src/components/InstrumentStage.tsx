@@ -3,8 +3,8 @@ import { ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
 import type { Instrument } from '@/content/archive'
 import { MATERIALS, instrumentModel } from './gl/instruments3d'
 import type { InstrumentModel } from './gl/instruments3d'
-import { loadGlbModel } from './gl/glb'
-import { SAXOPHONE_MODEL } from '@/content/saxophone-model'
+import { loadInstrumentModel } from './gl/glb'
+import { INSTRUMENT_MODELS } from '@/content/instrument-models'
 import { lookAt, multiply, perspective } from './gl/matrix'
 import type { Vec3 } from './gl/matrix'
 
@@ -109,14 +109,16 @@ export function InstrumentStage({ instrument, firstReveal = true, onIntroDone, s
   const [customError, setCustomError] = useState(false)
   const [customLoading, setCustomLoading] = useState(false)
 
+  const modelConfig = INSTRUMENT_MODELS[instrument.id]
   useEffect(() => {
     setCustom(null)
     setCustomError(false)
     setCustomLoading(false)
-    if (instrument.id !== 'saxophone' || !SAXOPHONE_MODEL.url) return
+    const config = INSTRUMENT_MODELS[instrument.id]
+    if (!config) return
     let cancelled = false
     setCustomLoading(true)
-    loadGlbModel(SAXOPHONE_MODEL.url, SAXOPHONE_MODEL.anchors)
+    loadInstrumentModel(config.url, config.keywords)
       .then(loaded => { if (!cancelled) setCustom(loaded) })
       .catch(() => { if (!cancelled) setCustomError(true) })
       .finally(() => { if (!cancelled) setCustomLoading(false) })
@@ -345,13 +347,11 @@ export function InstrumentStage({ instrument, firstReveal = true, onIntroDone, s
             style={{ opacity: 0, pointerEvents: 'none', zIndex: 3 }}
           >{String(index + 1).padStart(2, '0')}</button>
         ))}
-        {instrument.id === 'saxophone' && !custom && (
+        {modelConfig && !custom && (
           <span className="stage-hint eyebrow absolute left-3 right-3 top-10 z-[3]" role="status" aria-live="polite">
-            {customLoading
-              ? 'Loading replacement model — built-in illustration shown temporarily.'
-              : customError
-                ? 'Replacement model could not be loaded — showing the built-in illustration.'
-                : 'Replacement model not connected — showing the built-in illustration.'}
+            {customError
+              ? 'The instrument model could not be read — showing the built-in illustration.'
+              : 'Loading the instrument model — the built-in illustration is shown meanwhile.'}
           </span>
         )}
         {failed ? (
@@ -371,6 +371,9 @@ export function InstrumentStage({ instrument, firstReveal = true, onIntroDone, s
           </div>
         )}
       </div>
+      {modelConfig?.credit && custom && (
+        <a className="relative z-[3] mt-3 block max-w-[520px] text-[9px] uppercase tracking-[.14em] text-[#B9C8D5]/65 underline decoration-[#C6A875]/40 underline-offset-4 transition-colors hover:text-[#C6A875]" href={modelConfig.credit.href} target="_blank" rel="noreferrer noopener">{modelConfig.credit.text}</a>
+      )}
     </div>
   )
 }
