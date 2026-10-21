@@ -297,7 +297,7 @@ export function InstrumentStage({ instrument, firstReveal = true, onIntroDone }:
       <span className="stage-coordinate eyebrow">Exhibit 0{['saxophone', 'french-horn', 'trumpet', 'clarinet'].indexOf(instrument.id) + 1} / {instrument.character}</span>
       <span className="stage-word" aria-hidden="true">{instrument.character}</span>
       <div className="instrument-canvas-wrap">
-        <span className="stage-badge">{custom ? 'Imported 3D model' : 'Illustrative 3D model · built for this archive'}</span>
+        {!custom && <span className="stage-badge">Illustrative 3D model · built for this archive</span>}
         <canvas ref={canvasRef} className="instrument-canvas" tabIndex={0} role="img" aria-label={`Three-dimensional model of a ${instrument.name}. Drag to turn it, and use the buttons to move closer or further away.`} />
         {modelConfig && !custom && (
           <span className="stage-hint eyebrow absolute left-3 right-3 top-10 z-[3]" role="status" aria-live="polite">
@@ -323,9 +323,6 @@ export function InstrumentStage({ instrument, firstReveal = true, onIntroDone }:
           </div>
         )}
       </div>
-      {modelConfig?.credit && custom && (
-        <a className="relative z-[3] mt-3 block max-w-[520px] text-[9px] uppercase tracking-[.14em] text-[#B9C8D5]/65 underline decoration-[#C6A875]/40 underline-offset-4 transition-colors hover:text-[#C6A875]" href={modelConfig.credit.href} target="_blank" rel="noreferrer noopener">{modelConfig.credit.text}</a>
-      )}
     </div>
   )
 }

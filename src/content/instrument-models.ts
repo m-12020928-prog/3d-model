@@ -21,7 +21,6 @@ export type InstrumentModelConfig = {
   /** 管身主色：没有命中任何关键词的网格都用它。 */
   body: ModelFinish
   finishes?: FinishRule[]
-  credit?: { text: string; href: string }
 }
 
 // 黄铜漆面、较深的号身、镀银/镍银、黑檀木、胶木、皮革衬垫、芦苇簧片、软木、珠母。
@@ -46,11 +45,6 @@ export const INSTRUMENT_MODELS: Record<string, InstrumentModelConfig> = {
       { match: ['key', 'rod', 'screw', 'spring', 'guard', 'plate', 'hook', 'ring', 'post'], finish: LACQUER },
       { match: ['bell', 'bow', 'flare', 'body', 'tube', 'neck'], finish: LACQUER_DEEP },
     ],
-    // 该模型为 CC BY 4.0，授权要求注明作者。
-    credit: {
-      text: 'Saxophone model: “saxophone alto” by ANDRIANIAINAToky — CC BY 4.0',
-      href: 'https://sketchfab.com/3d-models/saxophone-alto-08448f4bfbca474b80ba35a571648a27',
-    },
   },
   'french-horn': {
     url: '/api/models/french-horn',
