@@ -1,5 +1,6 @@
-// 导入的乐器模型配置：地址与部件名关键词。
-// 模型放在主人的 GitHub 仓库 main 分支，浏览器直接读取；读取失败时展台继续用内置模型并如实说明。
+// 导入的乐器模型配置：站内地址与部件名关键词。
+// 模型来自主人的 GitHub 仓库（main 分支），已复制进本站文件存储，经 /api/models/<名字> 读取；
+// 读取失败时展台继续用内置模型并如实说明。
 export type InstrumentModelConfig = {
   url: string
   /** 部件 id → 用于在模型节点名、网格名中查找的关键词（按顺序匹配，先命中者优先）。 */
@@ -7,11 +8,9 @@ export type InstrumentModelConfig = {
   credit?: { text: string; href: string }
 }
 
-const BASE = 'https://raw.githubusercontent.com/m-12020928-prog/3d-model/main/'
-
 export const INSTRUMENT_MODELS: Record<string, InstrumentModelConfig> = {
   saxophone: {
-    url: `${BASE}saxophone_alto.glb`,
+    url: '/api/models/saxophone-alto',
     keywords: {
       mouthpiece: ['mouthpiece', 'reed', 'neck', 'bec'],
       keys: ['key', 'pad', 'button', 'rod'],
@@ -24,7 +23,7 @@ export const INSTRUMENT_MODELS: Record<string, InstrumentModelConfig> = {
     },
   },
   'french-horn': {
-    url: `${BASE}french_horn.glb`,
+    url: '/api/models/french-horn',
     keywords: {
       mouthpiece: ['mouthpiece', 'leadpipe', 'lead pipe'],
       valves: ['valve', 'lever', 'rotor', 'casing'],
@@ -32,7 +31,7 @@ export const INSTRUMENT_MODELS: Record<string, InstrumentModelConfig> = {
     },
   },
   trumpet: {
-    url: `${BASE}trumpet.glb`,
+    url: '/api/models/trumpet',
     keywords: {
       valves: ['valve', 'piston', 'casing', 'cap', 'button'],
       slide: ['slide', 'tuning', 'pipe', 'tube', 'brace'],
@@ -40,7 +39,7 @@ export const INSTRUMENT_MODELS: Record<string, InstrumentModelConfig> = {
     },
   },
   clarinet: {
-    url: `${BASE}clarinet_model_with_annotations.glb`,
+    url: '/api/models/clarinet',
     keywords: {
       reed: ['reed', 'mouthpiece', 'barrel', 'ligature'],
       register: ['register', 'speaker', 'trill'],

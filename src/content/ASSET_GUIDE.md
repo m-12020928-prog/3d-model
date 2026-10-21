@@ -23,7 +23,7 @@
 - `leaders[].photo`：严格对应四位已确认领导的肖像，不调整姓名或职务。
 - `groupPhoto`：领导展区后的合照。
 - `instruments[]` 的四件乐器：展台优先显示主人提供的 GLB 模型，读取失败或尚未载入时继续显示本站自制的参数化模型。
-- `INSTRUMENT_MODELS`（`src/content/instrument-models.ts`）：四件乐器的 GLB 地址、部件关键词与署名。当前地址指向主人仓库 `m-12020928-prog/3d-model` 的 `main` 分支，由浏览器直接读取。
+- `INSTRUMENT_MODELS`（`src/content/instrument-models.ts`）：四件乐器的 GLB 地址、部件关键词与署名。四个 GLB 已从主人仓库 `m-12020928-prog/3d-model` 的 `main` 分支复制进本站文件存储（`public/models/<名字>.glb`），由站内地址 `/api/models/<名字>` 提供；该地址读不到时会退回 GitHub 原文件，两边都失败才显示加载失败。
 
 ## 加入一张照片
 
