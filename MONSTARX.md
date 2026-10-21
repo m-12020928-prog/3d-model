@@ -21,6 +21,7 @@ These files are always present and cannot be edited. Read them with `read_file`.
 | `src/lib/monstarx/world-shapes.ts` | The country outlines `<WorldMap>` draws (loaded by it, never imported by the app) | Nothing imports it |
 | `src/lib/monstarx/firebase.ts` | `firestore`, `firebaseAuth`, `firebaseStorage`, `firebaseMessaging`, `firebaseRealtime`: the owner's own Firebase project, when its connector is connected | Server code only |
 | `src/lib/monstarx/country-data.ts` | `countryData`: live public data of Singapore, Japan, Malaysia, India, Indonesia, the UAE and the Philippines, when the owner switched the country on | Server code only |
+| `src/lib/monstarx/validation.ts` | `validateInput(schema, input)` and `invalidInput(message, fieldErrors)`: safe shared validation results | Browser and server |
 | `src/lib/actions.ts` | `useAction()` and `useOptimisticAction()`: buttons that answer at once; `messageOf()` turns action errors into the app's language | Routes and components |
 | `src/lib/auth.ts` | Better Auth on the server: email and password accounts, Google sign-in when the owner turns it on, the admin plugin, password reset emails. `getAuth()` | Server code only (`src/server/*.ts`, server routes) |
 | `src/lib/auth-client.ts` | `authClient`, Better Auth in the browser | Routes and components |
@@ -45,7 +46,7 @@ by the preview's dev server from the files in `src/routes`; it is not stored in 
 editing `src/routes`.
 
 `src/seo.config.ts` is written by the app owner's SEO/GEO tab. It is part of the project — you may read it — but you
-must never edit it directly. For an explicit Build request to fix SEO wording, use get_seo_settings and update_seo_settings with the revision you read. They update the same owner settings, preserving unrelated fields. Verify rendered titles with check_project; saved preview settings reach the published site only after publishing again.
+must never edit it directly. For an explicit Build request to change SEO, use get_seo_settings and update_seo_settings with the revision you read. The tool supports wording, global/page image, imageAlt, twitterCard, page noindex, robots.disallow and sitemap.exclude. It updates the same owner settings, preserving unrelated fields; preserve existing unrelated exclusion-list entries too. Global indexability, siteUrl, locale, robots mode, custom robots and AI crawler policy remain controlled by the owner's tab. Verify rendered metadata and crawl files with check_project; saved preview settings reach the published site only after publishing again.
 
 ## Calendar dates and timezones
 
@@ -73,7 +74,18 @@ export const Route = createRootRoute({
 
 **Never write meta tags into a route's `head()`** to give a page a title or a description, and never add your own
 `/robots.txt` or `/sitemap.xml` route: the owner's settings would stop reaching that page and the two would drift
-apart. If a page is missing a title, that is for the owner's tab, not for you.
+apart. For an explicit SEO request, change the supported settings through the tools above.
+
+For a public-only sitemap, inspect the app's real routes and access guards to identify private pages rather than
+guessing from their names. Use the route patterns returned by get_seo_settings: set noindex for confirmed private
+pages and add the requested paths to sitemap.exclude and robots.disallow, preserving public pages and unrelated
+exclusions. Verify rendered robots metadata and /sitemap.xml, /robots.txt and /llms.txt. A custom robots policy
+remains authoritative; report that instead of claiming a disallow-list patch changed the custom file.
+
+For a social card, use an existing publicly served image or create a real image asset (1200×630 recommended),
+then set image, imageAlt and twitterCard: 'summary_large_image'. Verify that the URL serves image data and that
+the rendered Open Graph and Twitter tags point to it. Never invent an asset URL. After publishing, verify the live
+metadata and crawl files; a preview check alone does not prove the published site changed.
 
 The one case where a page sets its own `head()` is a title built from data it loads (`"{post.title} — Blog"`). Then
 build the title from that data and leave everything else — description, canonical, Open Graph, structured data — to
@@ -205,6 +217,71 @@ const save = useAction(addTask, { onSuccess: () => setTitle('') })
 
 `run(...)` takes the arguments of the server function and returns nothing — never `await` it. It is ignored while
 the action is still running, so a form cannot be submitted twice, and `pending` is already on screen by then.
+
+### Form validation and failure recovery
+
+Every new or changed form validates in the browser and independently on the server before any write.
+Share a schema in an app-owned module such as `src/lib/expense-input.ts`; use explicit messages in the app's
+language. Include required values, types, limits and rules between fields. Money is integer minor units:
+custom shares must total the expense exactly, not within a floating-point tolerance.
+
+`validateInput(schema, input)` from `@/lib/monstarx/validation` accepts a synchronous Zod-compatible schema.
+It returns `{ ok: true, data }` with parsed data or `{ ok: false, error }` with a safe summary and
+`fieldErrors` keyed by paths such as `amount` or `shares.0.amount`. Schemas must not put submitted values,
+credentials or internal diagnostics in their error messages. The action hooks use `inputIssues(error)` to
+recognize schema issue arrays, including serialized server errors. It returns the issues or `null`; use
+`messageOf` and the hooks’ `fieldErrors` for display rather than rendering raw issue objects.
+
+```tsx
+const save = useAction(saveExpense, {
+  validate: ({ data }) => validateInput(expenseInput, data),
+  onSuccess: () => closeForm(),
+})
+<form onSubmit={(event) => {
+  event.preventDefault()
+  save.run({ data: { totalCents, sharesCents } })
+}}>
+  <fieldset disabled={!save.ready}>
+    {/* Keep controlled inputs here. Associate field messages with aria-describedby/aria-invalid. */}
+    {save.fieldErrors.sharesCents ? <p id="shares-error">{save.fieldErrors.sharesCents}</p> : null}
+    <button type="submit">{save.pending ? 'Saving…' : 'Save'}</button>
+  </fieldset>
+  {save.error ? <p role="alert">{save.error}</p> : null}
+</form>
+```
+
+The server repeats the same check; never trust the client. For expected validation failures, return
+`{ error: checked.error }` instead of throwing a transport exception:
+
+```ts
+export const saveExpense = createServerFn({ method: 'POST' })
+  .inputValidator((input: unknown) => input)
+  .handler(async ({ data }) => {
+    const checked = validateInput(expenseInput, data)
+    if (!checked.ok) return { error: checked.error }
+    const user = await requireUser()
+    // Check authorization and current business constraints, then save checked.data.
+    return await persistExpense(user.id, checked.data)
+  })
+```
+
+For a rule found only on the server, return `{ error: invalidInput('This slot was just booked. Choose another time.',
+{ slot: 'Choose an available time.' }).error }`. Use the app's own language. Never return raw database errors.
+For a custom split, a shared refinement should attach the exact expected total to `sharesCents`, e.g.
+“Split amounts must total $120.00.” Include currency and the current expense amount.
+
+Both action hooks expose `error` and `fieldErrors`, and `clearError()` clears both. Client validation runs before
+the request or optimistic update. Server failures never call `onSuccess` or refetch loaders.
+Keep entered values and the form open on every failure. Reset, close or navigate only in `onSuccess`, not after
+`run()` (which returns immediately), in `finally`, or after an unchecked server result. Do not erase edits made
+while a request was pending. Use native constraints as additional feedback, not as the sole validation.
+If Save is disabled for invalid input, show why; a clickable Save may instead reveal errors without sending.
+
+`messageOf` translates network failures and safely summarizes schema errors; it never makes a connection
+failure look like invalid input. A failed connection may happen after the write committed. Do not automatically
+retry a mutation or claim that nothing saved; check for the saved record before trying again.
+Unexpected technical errors get a safe fallback; keep diagnostic details on the server.
+Verify invalid input, retained values, correction and one successful save in browser QA. A compile is not proof.
 
 ### Sign-in forms
 

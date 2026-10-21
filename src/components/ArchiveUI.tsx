@@ -6,9 +6,9 @@ import type { Photo } from '@/content/archive'
 import { bandLogo } from '@/content/archive'
 import './site-nav.css'
 
-export const sections = ['Home', 'Legacy', 'Instruments', 'Memories', 'Events', 'People', 'Sound Room']
+export const sections = ['Home', 'Legacy', 'Instruments', 'Memories', 'Voice Quiz', 'Events', 'People', 'Passport', 'Sound Room']
 const menuItems = [...sections, 'FAQ', 'Feedback']
-const idOf = (label: string) => label.toLowerCase().replace(' ', '-')
+const idOf = (label: string) => label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
 
 export function ChapterLabel({ number, children }: { number: string; children: ReactNode }) { return <div className="eyebrow flex items-center gap-4"><span className="text-gold">{number}</span><span className="h-px w-9 bg-gold/45" /><span>{children}</span></div> }
 export function SectionLink({ id, children, className = '' }: { id: string; children: ReactNode; className?: string }) { return <Link to="/" hash={id} className={className}>{children}</Link> }

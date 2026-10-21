@@ -25,7 +25,7 @@ export interface SeoPageConfig {
   description?: string
   /** Social card for this page; falls back to the app's. */
   image?: string
-  /** Keep this page out of search results. */
+  /** Keep this page and its descendants out of search results (including parameterized routes). */
   noindex?: boolean
   changefreq?: ChangeFrequency
   /** 0 to 1, the sitemap's hint at how important this page is relative to the others. */
@@ -70,7 +70,7 @@ export interface SeoConfig {
   }
   sitemap: {
     enabled: boolean
-    /** Paths to leave out of the sitemap. */
+    /** Paths and their descendants to leave out of the sitemap (including parameterized routes). */
     exclude: string[]
     /** Extra URLs (paths or absolute) the router does not know about. */
     extra: string[]
@@ -183,6 +183,84 @@ function fillParams(path: string, params: Record<string, string> | undefined): s
     .join('/')
 }
 
+/** Compare route policy against pathnames, including same-origin absolute sitemap extras. */
+function localPath(path: string, config: SeoConfig): string | null {
+  try {
+    const base = new URL(config.siteUrl || 'https://monstarx.invalid')
+    const url = new URL(/^https?:\/\//i.test(path) || path.startsWith('/') ? path : `/${path}`, base)
+    if (url.origin !== base.origin) return null
+    return url.pathname.replace(/\/+$/, '') || '/'
+  } catch {
+    return null
+  }
+}
+
+/** A route segment is a boundary: /account does not match /accounting. */
+function matchesRoute(pattern: string, path: string, descendants: boolean): boolean {
+  if (pattern === path) return true
+  // A homepage setting concerns that page; the app's indexable switch controls the whole site.
+  if (pattern === '/') return false
+  const route = pattern.slice(1).split('/')
+  const candidate = path === '/' ? [] : path.slice(1).split('/')
+  for (let index = 0; index < route.length; index++) {
+    const segment = route[index]!
+    // TanStack's trailing $ is a splat; named parameters consume exactly one segment.
+    if (segment === '$') return true
+    if (!candidate[index] || (!segment.startsWith('$') && segment !== candidate[index])) return false
+  }
+  return descendants || candidate.length === route.length
+}
+
+/** Static routes outrank parameters, and named parameters outrank splats, as they do in the router. */
+function shadowsRoute(route: string, policy: string): boolean {
+  const selected = route.slice(1).split('/')
+  const pattern = policy.slice(1).split('/')
+  const rank = (segment: string) => segment === '$' ? 0 : segment.startsWith('$') ? 1 : 2
+  for (let index = 0; index < Math.min(selected.length, pattern.length); index++) {
+    const difference = rank(selected[index]!) - rank(pattern[index]!)
+    if (difference) return difference > 0
+  }
+  return false
+}
+
+function matchesPolicy(pattern: string, pathname: string, config: SeoConfig): boolean {
+  if (!matchesRoute(pattern, pathname, true)) return false
+  if (!pattern.includes('$')) return true
+  // /pro/apply is a public static route, not an instance of a private /pro/$id route.
+  // Descendant settings do not override a true parent policy such as /admin or /pro/$id/settings.
+  return ![...config.paths, ...config.pages.map((page) => page.path)].some((path) => {
+    const route = localPath(path, config)
+    return route !== null && matchesRoute(route, pathname, false) && shadowsRoute(route, pattern)
+  })
+}
+
+function pageEntry(path: string, config: SeoConfig): SeoPageConfig | undefined {
+  const pathname = localPath(path, config)
+  if (pathname === null) return undefined
+  const exact = config.pages.find((page) => localPath(page.path, config) === pathname)
+  if (exact) return exact
+  return config.pages.find((page) => {
+    const pattern = localPath(page.path, config)
+    return pattern !== null && pattern.includes('$') && matchesRoute(pattern, pathname, false) && matchesPolicy(pattern, pathname, config)
+  })
+}
+
+function explicitlyNoindex(path: string, config: SeoConfig): boolean {
+  const pathname = localPath(path, config)
+  return pathname !== null && config.pages.some((page) => {
+    const pattern = page.noindex ? localPath(page.path, config) : null
+    return pattern !== null && matchesPolicy(pattern, pathname, config)
+  })
+}
+
+function excludedFromSitemap(path: string, config: SeoConfig): boolean {
+  const pathname = localPath(path, config)
+  return pathname !== null && config.sitemap.exclude.some((entry) => {
+    const pattern = localPath(entry, config)
+    return pattern !== null && matchesPolicy(pattern, pathname, config)
+  })
+}
+
 /** One page's settings, with the app's defaults filled in and its title already dressed by the template. */
 export interface ResolvedPageSeo {
   path: string
@@ -196,14 +274,14 @@ export interface ResolvedPageSeo {
 
 /** The settings for one page: what the tab holds for it, with the app's defaults filled in. */
 export function pageSeo(path: string, config: SeoConfig = seoConfig): ResolvedPageSeo {
-  const entry = config.pages.find((page) => page.path === path) ?? config.pages.find((page) => page.path === path.replace(/\/+$/, '')) ?? null
+  const entry = pageEntry(path, config)
   const title = entry?.title?.trim() || config.defaultTitle
   const dressed = entry?.title?.trim() && config.titleTemplate.includes('%s') ? config.titleTemplate.replace('%s', entry.title.trim()) : title
   return {
     path,
     title: dressed,
     description: entry?.description?.trim() || config.defaultDescription,
-    noindex: !config.indexable || Boolean(entry?.noindex),
+    noindex: !config.indexable || explicitlyNoindex(path, config),
     image: entry?.image ?? config.image,
     faq: entry?.faq?.length ? entry.faq : config.faq,
     summary: entry?.summary?.trim() ?? '',
@@ -236,14 +314,15 @@ export function seoHead(context: SeoHeadContext = {}, config: SeoConfig = seoCon
   const last = context.matches?.[context.matches.length - 1]
   const routePath = last?.fullPath || last?.pathname || '/'
   const page = pageSeo(routePath, config)
-  const url = absoluteUrl(fillParams(last?.pathname || routePath, context.params), config)
+  const pathname = fillParams(last?.pathname || routePath, context.params)
+  const url = absoluteUrl(pathname, config)
   const image = page.image ? absoluteUrl(page.image, config) : null
 
   const meta: HeadMeta[] = [{ charSet: 'utf-8' }, { name: 'viewport', content: 'width=device-width, initial-scale=1' }]
   if (page.title) meta.push({ title: page.title })
   if (page.description) meta.push({ name: 'description', content: page.description })
   if (config.keywords.length) meta.push({ name: 'keywords', content: config.keywords.join(', ') })
-  meta.push({ name: 'robots', content: page.noindex ? 'noindex, nofollow' : 'index, follow, max-image-preview:large, max-snippet:-1' })
+  meta.push({ name: 'robots', content: page.noindex || explicitlyNoindex(pathname, config) ? 'noindex, nofollow' : 'index, follow, max-image-preview:large, max-snippet:-1' })
   if (config.themeColor) meta.push({ name: 'theme-color', content: config.themeColor })
   if (config.organization.name) meta.push({ name: 'author', content: config.organization.name })
 
@@ -334,14 +413,12 @@ function escapeXml(text: string): string {
 
 /** The body of /sitemap.xml for the app's static pages (paths with parameters are left out: they have no one URL). */
 export function sitemapXml(paths: string[], config: SeoConfig = seoConfig, now = new Date()): string {
-  const excluded = new Set(config.sitemap.exclude)
   const seen = new Set<string>()
   const entries: string[] = []
   const lastmod = now.toISOString().slice(0, 10)
   for (const path of [...paths, ...config.sitemap.extra]) {
-    if (path.includes('$') || excluded.has(path)) continue
-    const page = config.pages.find((entry) => entry.path === path)
-    if (page?.noindex) continue
+    if (path.includes('$') || excludedFromSitemap(path, config) || explicitlyNoindex(path, config)) continue
+    const page = pageEntry(path, config)
     const loc = absoluteUrl(path, config)
     if (seen.has(loc)) continue
     seen.add(loc)
@@ -362,7 +439,8 @@ export function llmsTxt(paths: string[], config: SeoConfig = seoConfig): string 
   const summary = config.llms.summary.trim() || config.defaultDescription
   if (summary) lines.push(`> ${summary}`, '')
   if (config.llms.notes.trim()) lines.push(config.llms.notes.trim(), '')
-  const listed = paths.filter((path) => !path.includes('$') && !config.pages.find((page) => page.path === path)?.noindex)
+  // These are discovery links too, so honor the owner's sitemap exclusions as well as noindex policies.
+  const listed = paths.filter((path) => !path.includes('$') && !excludedFromSitemap(path, config) && !explicitlyNoindex(path, config))
   if (listed.length) {
     lines.push('## Pages', '')
     for (const path of listed) {

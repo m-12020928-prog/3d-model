@@ -23,6 +23,8 @@ const NOT_APP_SOURCES = [
   '.monstarx-dev-env',
   'MONSTARX.md',
   'monstarx-inspector.js',
+  'monstarx-vite-connection.mjs',
+  'monstarx-vite-socket.js',
   'monstarx-proxy.mjs',
   'vite.config.ts',
   'vite.config.cloudflare.ts',

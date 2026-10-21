@@ -16,6 +16,7 @@
 
 import { useEffect, useOptimistic, useRef, useState, useTransition } from 'react'
 import { useRouter } from '@tanstack/react-router'
+import { inputIssues, type InputError, type InputResult } from './monstarx/validation'
 
 type AuthFailure = 'credentials' | 'exists' | 'email' | 'short' | 'tooMany' | 'generic'
 
@@ -53,48 +54,89 @@ function authFailure(code: string, message: string): AuthFailure | null {
   return null
 }
 
+const INPUT_MESSAGES: Record<string, { connection: string; validation: string }> = {
+  en: { connection: 'We could not confirm the request. Check your connection and whether it saved before trying again.', validation: 'Please check the entered details.' },
+  ja: { connection: '処理を確認できませんでした。接続と保存状況を確認してから、もう一度お試しください。', validation: '入力内容を確認してください。' },
+  zh: { connection: '无法确认请求结果。请检查网络连接，并确认是否已保存，再重试。', validation: '请检查填写的内容。' },
+  ko: { connection: '요청 결과를 확인하지 못했습니다. 연결과 저장 여부를 확인한 후 다시 시도해 주세요.', validation: '입력한 내용을 확인해 주세요.' },
+  pt: { connection: 'Não foi possível confirmar o pedido. Confira a conexão e se os dados foram salvos antes de tentar de novo.', validation: 'Confira os dados preenchidos.' },
+  ms: { connection: 'Permintaan tidak dapat disahkan. Semak sambungan dan sama ada data telah disimpan sebelum mencuba lagi.', validation: 'Sila semak butiran yang dimasukkan.' },
+  id: { connection: 'Hasil permintaan belum dapat dipastikan. Periksa koneksi dan apakah data sudah tersimpan sebelum mencoba lagi.', validation: 'Periksa data yang diisi.' },
+  vi: { connection: 'Chưa thể xác nhận kết quả yêu cầu. Hãy kiểm tra kết nối và xem dữ liệu đã được lưu chưa trước khi thử lại.', validation: 'Vui lòng kiểm tra thông tin đã nhập.' },
+  th: { connection: 'ยังยืนยันผลคำขอไม่ได้ โปรดตรวจสอบการเชื่อมต่อและว่าบันทึกแล้วหรือไม่ก่อนลองอีกครั้ง', validation: 'โปรดตรวจสอบข้อมูลที่กรอก' },
+  hi: { connection: 'अनुरोध का नतीजा पक्का नहीं हो सका। फिर कोशिश करने से पहले कनेक्शन और डेटा सहेजा गया है या नहीं, जाँचें।', validation: 'कृपया भरी गई जानकारी जाँचें।' },
+  ru: { connection: 'Не удалось подтвердить результат запроса. Перед повторной попыткой проверьте соединение и сохранены ли данные.', validation: 'Проверьте введённые данные.' },
+  ar: { connection: 'تعذّر التأكد من نتيجة الطلب. تحقّق من الاتصال وما إذا كانت البيانات قد حُفظت قبل المحاولة مرة أخرى.', validation: 'تحقّق من البيانات المُدخلة.' },
+  sw: { connection: 'Hatukuweza kuthibitisha matokeo ya ombi. Kagua muunganisho na kama data imehifadhiwa kabla ya kujaribu tena.', validation: 'Tafadhali kagua maelezo uliyoingiza.' },
+  ha: { connection: 'Ba a iya tabbatar da sakamakon buƙatar ba. Duba haɗin yanar gizo da ko an adana bayanan kafin sake gwadawa.', validation: 'Da fatan za a duba bayanan da aka shigar.' },
+  ta: { connection: 'கோரிக்கையின் முடிவை உறுதிப்படுத்த முடியவில்லை. மீண்டும் முயலும் முன் இணைப்பையும் தரவு சேமிக்கப்பட்டதா என்பதையும் சரிபார்க்கவும்.', validation: 'உள்ளிட்ட விவரங்களைச் சரிபார்க்கவும்.' },
+  bn: { connection: 'অনুরোধের ফল নিশ্চিত করা যায়নি। আবার চেষ্টা করার আগে সংযোগ এবং তথ্য সংরক্ষিত হয়েছে কি না যাচাই করুন।', validation: 'অনুগ্রহ করে দেওয়া তথ্য যাচাই করুন।' },
+}
+
+function language(): string {
+  return typeof document !== 'undefined' ? document.documentElement.lang.toLowerCase().split('-')[0] ?? '' : ''
+}
+
+/** Diagnostics are not user-facing error messages. Preserve short, actionable app-authored messages. */
+function diagnostic(message: string): boolean {
+  return message.length > 500 || /[\r\n]|^\s*[[{<]|(?:^|\s)at\s+\S+\s*\(|\b(?:SQLITE_|SQLSTATE|D1_ERROR|constraint failed|duplicate key|violates .*constraint|invalid input syntax|syntax error|stack trace|Cannot (?:read|set) propert(?:y|ies)|TypeError|ReferenceError|Internal Server Error|Internal error|fetch failed|ECONN\w+|ENOTFOUND|ETIMEDOUT)\b|\b(?:node_modules|src)\/\S+\.[cm]?[jt]sx?|\b(?:SELECT .+ FROM|INSERT INTO|UPDATE .+ SET)\b/i.test(message)
+}
+
 export function messageOf(error: unknown): string {
-  const code = error && typeof error === 'object' && 'code' in error ? String((error as { code?: unknown }).code ?? '') : ''
-  const text =
-    error instanceof Error
-      ? error.message
-      : typeof error === 'string'
-        ? error
-        : error && typeof error === 'object'
-          ? String((error as { message?: unknown }).message ?? (error as { statusText?: unknown }).statusText ?? '')
-          : ''
-  const message = text.trim()
-  // Better Auth supplies its own English messages. The app's <html lang> is the source of truth: an English app keeps the
-  // provider's wording, any other language its own.
-  const lang = typeof document !== 'undefined' ? document.documentElement.lang.toLowerCase().split('-')[0] ?? '' : ''
+  const code = error && typeof error === 'object' && 'code' in error ? String(error.code ?? '') : ''
+  const text = error instanceof Error ? error.message : typeof error === 'string' ? error
+    : error && typeof error === 'object' ? String((error as { message?: unknown }).message ?? (error as { statusText?: unknown }).statusText ?? '') : ''
+  const lang = language()
   const words = AUTH_MESSAGES[lang]
+  const inputWords = INPUT_MESSAGES[lang] ?? INPUT_MESSAGES.en!
+  const issues = inputIssues(error)
+  const message = (issues?.[0]?.message ?? text).trim()
+  const generic = words?.generic ?? 'Something went wrong. Please try again.'
+  if (/^(?:Failed to fetch|NetworkError when attempting to fetch resource\.?|Load failed|Network request failed|fetch failed)$/i.test(message)) return inputWords.connection
+  if (diagnostic(message)) return issues || code === 'VALIDATION_ERROR' ? inputWords.validation : generic
+  // Zod's generated diagnostics need an app-authored message, not JSON or implementation types.
+  if ((issues || code === 'VALIDATION_ERROR') && (!message || /^(?:Invalid input:|Too (?:small|big):|Invalid (?:string|number|type):)/i.test(message))) return inputWords.validation
   if (words) {
     const failure = authFailure(code, message)
     if (failure) return words[failure]
-    if (!message || (words.script ? !words.script.test(message) : /^[A-Z][A-Z_]+$/.test(code))) return words.generic
+    if (!message || (words.script ? !words.script.test(message) : code !== 'VALIDATION_ERROR' && /^[A-Z][A-Z_]+$/.test(code))) return words.generic
   }
-  return message || 'Something went wrong. Please try again.'
+  return message || (code === 'VALIDATION_ERROR' ? inputWords.validation : generic)
 }
 
-/**
- * Some calls report a failure in what they return instead of throwing: `authClient.signIn.email()` resolves to
- * `{ data: null, error: { message } }` for a wrong password, and a server function may return `{ error: 'That time was
- * just taken' }`. Either counts as a failure, so `onSuccess` never runs for it and `error` shows its message.
- */
-function failureIn(result: unknown): string | null {
-  if (!result || typeof result !== 'object' || !('error' in result)) return null
-  const error = (result as { error: unknown }).error
-  return error ? messageOf(error) : null
+/** Keep field errors separate from the form summary; raw schema details and submitted values never reach the UI. */
+function fieldsOf(error: unknown): Record<string, string> {
+  const fields: Record<string, string> = Object.create(null)
+  const supplied = error && typeof error === 'object' && 'fieldErrors' in error ? error.fieldErrors : null
+  if (supplied && typeof supplied === 'object' && !Array.isArray(supplied)) {
+    for (const [key, value] of Object.entries(supplied).slice(0, 50)) {
+      if (typeof value === 'string' && value.trim() && key.length <= 200) fields[key] = messageOf({ code: 'VALIDATION_ERROR', message: value })
+    }
+  }
+  for (const issue of inputIssues(error)?.slice(0, 50) ?? []) {
+    const key = issue.path?.map(part => String(typeof part === 'object' ? part.key : part)).join('.')
+    if (key && key.length <= 200 && !Object.hasOwn(fields, key)) fields[key] = messageOf({ code: 'VALIDATION_ERROR', message: issue.message })
+  }
+  return fields
 }
 
-export interface ActionOptions<Result = unknown> {
+/** Returned failures cross server-function boundaries without being masked as transport exceptions. */
+function failureIn(result: unknown): unknown {
+  return result && typeof result === 'object' && 'error' in result && result.error ? result.error : null
+}
+
+type ActionSuccess<Result> = Result extends { error: InputError } ? never : Result
+
+export interface ActionOptions<Result = unknown, Args extends unknown[] = unknown[]> {
+  /** Check inputs before calling the server. The server must independently repeat the same validation. */
+  validate?: (...args: Args) => InputResult<unknown>
   /** Refetch the route's loaders after the action succeeds. Default true; turn it off when nothing on the page changes. */
   refresh?: boolean
   /**
    * Runs after the action succeeded and the loaders have refetched, with what the action returned — open the record it
    * created, close a dialog, clear a form.
    */
-  onSuccess?: (result: Result) => void
+  onSuccess?: (result: ActionSuccess<Result>) => void
   /** Handle the failure yourself (a toast, say) instead of reading `error`. */
   onError?: (message: string) => void
 }
@@ -108,6 +150,8 @@ export interface Action<Args extends unknown[]> {
   pending: boolean
   /** The message from the last failure, or null. Render it near the button. */
   error: string | null
+  /** Errors keyed by the schema field path, e.g. "amount" or "shares.0.amount". */
+  fieldErrors: Record<string, string>
   /** Clear `error` (for example when the user edits the form again). */
   clearError: () => void
 }
@@ -127,11 +171,12 @@ export interface Action<Args extends unknown[]> {
  * already showing by then, so the person sees why. Never put `disabled={save.pending}` on the button as the only
  * feedback: a disabled button that looks unchanged is exactly what feels broken.
  */
-export function useAction<Args extends unknown[], Result>(action: (...args: Args) => Promise<Result>, options: ActionOptions<Result> = {}): Action<Args> {
+export function useAction<Args extends unknown[], Result>(action: (...args: Args) => Promise<Result>, options: ActionOptions<Result, Args> = {}): Action<Args> {
   const router = useRouter()
   const ready = useActionReady()
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const running = useRef(false)
   // Read at call time so a run started from an old render still uses this render's action and options.
   const latest = useRef({ action, options })
@@ -141,15 +186,19 @@ export function useAction<Args extends unknown[], Result>(action: (...args: Args
     if (running.current) return
     running.current = true
     setError(null)
+    setFieldErrors({})
     startTransition(async () => {
       const { action: fn, options: opts } = latest.current
       try {
+        const validation = opts.validate?.(...args)
+        if (validation && !validation.ok) throw validation.error
         const result = await fn(...args)
         const failed = failureIn(result)
-        if (failed !== null) throw new Error(failed)
+        if (failed !== null) throw failed
         if (opts.refresh !== false) await router.invalidate()
-        opts.onSuccess?.(result)
+        opts.onSuccess?.(result as ActionSuccess<Result>)
       } catch (failure) {
+        setFieldErrors(fieldsOf(failure))
         const message = messageOf(failure)
         if (opts.onError) opts.onError(message)
         else setError(message)
@@ -159,7 +208,7 @@ export function useAction<Args extends unknown[], Result>(action: (...args: Args
     })
   }
 
-  return { ready, run, pending, error, clearError: () => setError(null) }
+  return { ready, run, pending, error, fieldErrors, clearError: () => { setError(null); setFieldErrors({}) } }
 }
 
 function useActionReady(): boolean {
@@ -168,7 +217,7 @@ function useActionReady(): boolean {
   return ready
 }
 
-export interface OptimisticActionOptions<Value, Args extends unknown[], Result = unknown> extends ActionOptions<Result> {
+export interface OptimisticActionOptions<Value, Args extends unknown[], Result = unknown> extends ActionOptions<Result, Args> {
   /** The value as the server knows it: read it from the route loader every render, never copy it into useState. */
   value: Value
   /** The value to show the instant the button is pressed, from the value showing now and the run's arguments. */
@@ -204,6 +253,7 @@ export function useOptimisticAction<Value, Args extends unknown[], Result>(optio
   const ready = useActionReady()
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const latest = useRef(options)
   latest.current = options
   const [value, applyOptimistic] = useOptimistic(options.value, (current: Value, args: Args) => latest.current.update(current, ...args))
@@ -213,19 +263,23 @@ export function useOptimisticAction<Value, Args extends unknown[], Result>(optio
 
   function run(...args: Args) {
     setError(null)
+    setFieldErrors({})
     startTransition(async () => {
-      applyOptimistic(args)
-      const mine = queue.current.catch(() => undefined).then(() => latest.current.action(...args))
-      queue.current = mine
       try {
+        const validation = latest.current.validate?.(...args)
+        if (validation && !validation.ok) throw validation.error
+        applyOptimistic(args)
+        const mine = queue.current.catch(() => undefined).then(() => latest.current.action(...args))
+        queue.current = mine
         const result = await mine
         const failed = failureIn(result)
-        if (failed !== null) throw new Error(failed)
+        if (failed !== null) throw failed
         // Inside the transition on purpose: React holds the optimistic value until this whole block is done, so
         // the real value is already on screen when it lets go and the row never flickers back.
         if (latest.current.refresh !== false) await router.invalidate()
-        latest.current.onSuccess?.(result)
+        latest.current.onSuccess?.(result as ActionSuccess<Result>)
       } catch (failure) {
+        setFieldErrors(fieldsOf(failure))
         const message = messageOf(failure)
         if (latest.current.onError) latest.current.onError(message)
         else setError(message)
@@ -233,5 +287,5 @@ export function useOptimisticAction<Value, Args extends unknown[], Result>(optio
     })
   }
 
-  return { ready, value, run, pending, error, clearError: () => setError(null) }
+  return { ready, value, run, pending, error, fieldErrors, clearError: () => { setError(null); setFieldErrors({}) } }
 }
