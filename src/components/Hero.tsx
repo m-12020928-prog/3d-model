@@ -1,55 +1,82 @@
 import { useEffect, useRef, useState } from 'react'
-import { bandLogo, copy, heroGallery } from '@/content/archive'
-import { ChapterLabel } from './ArchiveUI'
+import { ArrowDownRight, Pause, Play } from 'lucide-react'
+import { copy, heroGallery } from '@/content/archive'
+import { ChapterLabel, SectionLink } from './ArchiveUI'
 import './hero-archive.css'
 
-const photos = heroGallery.filter(item => item.src)
-const first = photos[0] ?? heroGallery[0]
-const rest = photos.slice(1)
+const photos = heroGallery.filter(photo => photo.src)
 
 export function Hero() {
-  const ref = useRef<HTMLElement>(null)
+  const root = useRef<HTMLElement>(null)
   const [active, setActive] = useState(0)
-  const [inView, setInView] = useState(true)
-  // 底图层始终显示一张照片；若这张图载入失败，就换下一张可用的，绝不只剩文字说明。
-  const [baseIndex, setBaseIndex] = useState(0)
-  const [exhausted, setExhausted] = useState(false)
-  const base = photos[baseIndex] ?? first
-  const photo = photos[active % Math.max(1, photos.length)] ?? first
-  const advanceBase = () => {
-    const next = baseIndex + 1
-    if (next < photos.length) setBaseIndex(next)
-    else setExhausted(true)
-  }
+  const [visible, setVisible] = useState(true)
+  const [paused, setPaused] = useState(false)
+  const [reduced, setReduced] = useState(false)
+  const [failed, setFailed] = useState<string[]>([])
+  const available = photos.filter(photo => !failed.includes(photo.id))
+  const current = available[active % Math.max(1, available.length)]
+
   useEffect(() => {
-    const node = ref.current; if (!node) return
-    const motion = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const update = () => { if (motion.matches) { node.style.setProperty('--hero-shift', '0px'); return }; const y = Math.min(window.scrollY, window.innerHeight); node.style.setProperty('--hero-shift', `${y * .12}px`) }
-    const observer = new IntersectionObserver(([entry]) => { node.classList.toggle('hero-inactive', !entry.isIntersecting); setInView(entry.isIntersecting) }); observer.observe(node)
-    window.addEventListener('scroll', update, { passive: true }); update()
-    return () => { observer.disconnect(); window.removeEventListener('scroll', update) }
+    const node = root.current
+    if (!node) return
+    const preference = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const motion = () => setReduced(preference.matches)
+    motion()
+    preference.addEventListener('change', motion)
+    let onScreen = true
+    const updateVisibility = () => setVisible(onScreen && !document.hidden)
+    const observer = new IntersectionObserver(([entry]) => { onScreen = entry.isIntersecting; updateVisibility() })
+    observer.observe(node)
+    let frame = 0
+    const update = () => {
+      frame = 0
+      const progress = Math.min(1, Math.max(0, -node.getBoundingClientRect().top / Math.max(1, node.offsetHeight)))
+      node.style.setProperty('--hero-progress', preference.matches ? '0' : String(progress))
+    }
+    const scroll = () => { if (!frame) frame = requestAnimationFrame(update) }
+    window.addEventListener('scroll', scroll, { passive: true })
+    document.addEventListener('visibilitychange', updateVisibility)
+    update()
+    return () => {
+      observer.disconnect()
+      cancelAnimationFrame(frame)
+      preference.removeEventListener('change', motion)
+      window.removeEventListener('scroll', scroll)
+      document.removeEventListener('visibilitychange', updateVisibility)
+    }
   }, [])
-  // 主照片每 3 秒换下一张；交叠淡入淡出交给 CSS，离开视口或切到后台时暂停。
+
   useEffect(() => {
-    if (photos.length < 2 || !inView) return
-    let timer = 0
-    const start = () => { window.clearInterval(timer); timer = window.setInterval(() => setActive(index => (index + 1) % photos.length), 3000) }
-    const stop = () => { window.clearInterval(timer); timer = 0 }
-    const onVisibility = () => { if (document.visibilityState === 'hidden') stop(); else start() }
-    start()
-    document.addEventListener('visibilitychange', onVisibility)
-    return () => { stop(); document.removeEventListener('visibilitychange', onVisibility) }
-  }, [inView])
-  return <section id="home" ref={ref} className="hero" aria-labelledby="hero-title"><div className="hero-grid" aria-hidden="true" /><div className="hero-light" aria-hidden="true" />
-    <div className="hero-main page-width"><div className="hero-editorial"><ChapterLabel number="01">The living sound archive</ChapterLabel><h1 id="hero-title">More than<br />music.<br /><em>A story</em><br /><em>we share.</em></h1><div className="hero-copy"><span className="short-line" /><p>{copy.hero}</p></div>
-      <div className="mt-6 flex items-center gap-3"><img src={bandLogo.src} alt={bandLogo.alt} className="h-12 w-12 rounded-full object-cover ring-1 ring-gold/50" loading="eager" decoding="async" /><span className="eyebrow">SMKKB School Band · Since 1977</span></div></div>
-    <div className="hero-art"><div className="hero-photo-wrap"><div className="hero-photo hero-photo-stack">
-      {/* 首帧固定可见的底图层，不依赖轮播计时器 */}
-      <img className={`hero-photo-layer hero-photo-base${exhausted ? ' is-hidden' : ''}`} src={base.src} alt={exhausted ? '' : base.alt || base.label} loading="eager" fetchPriority="high" decoding="async" onError={advanceBase} />
-      {exhausted && <div className="hero-photo-fallback" role="img" aria-label={base.alt || base.label}><span className="eyebrow text-gold">{base.event ?? 'SMKKB SCHOOL BAND'}</span><span className="hero-photo-fallback-title">{base.label}</span></div>}
-      {!exhausted && rest.map((item, index) => <img key={item.id} src={item.src} alt={active === index + 1 ? (item.alt || item.label) : ''} className={`hero-photo-layer${active === index + 1 ? ' is-active' : ''}`} loading="lazy" decoding="async" />)}
-    </div><div className="hero-photo-caption"><span>{photo.event ?? 'SMKKB SCHOOL BAND'}</span><span>{photo.caption ?? 'A continuing story, since 1977.'}</span></div></div>
-      <div className="sr-only" aria-live="polite">{`Now showing: ${photo.label}`}</div>
-      <div className="vinyl-wrap" aria-hidden="true"><div className="vinyl"><div className="vinyl-label"><span>SMKKB</span><small>SCHOOL BAND</small><i /><small>ONE BAND · ONE SOUND</small><span className="vinyl-year">1977</span></div></div></div><div className="record-note"><span className="h-px w-7 bg-gold/50" /> A story still in motion.</div><span className="art-coordinate">VOL. 01 / THE SOUND</span></div></div>
+    if (!visible || paused || reduced || available.length < 2) return
+    const timer = window.setInterval(() => setActive(index => index + 1), 3000)
+    return () => window.clearInterval(timer)
+  }, [visible, paused, reduced, available.length])
+
+  return <section id="home" ref={root} className={`hero-section${visible && !paused && !reduced ? ' hero-active' : ''}`} aria-labelledby="hero-title">
+    <div className="page-width">
+      <div className="edition-line"><span>The living sound archive</span><span>Music · People · Memory</span><span>Established 1977</span></div>
+      <div className="edition-masthead" aria-label="SMKKB School Band"><span>SMKKB</span><span>SCHOOL BAND</span></div>
+      <div className="hero-layout">
+        <div className="hero-copy">
+          <ChapterLabel number="01">The sound / The opening note</ChapterLabel>
+          <h1 id="hero-title" className="hero-title font-display">More than music.<br /><em>A story<br />we share.</em></h1>
+          <p className="hero-description">{copy.hero}</p>
+          <SectionLink id="legacy" className="hero-cta">Open the archive <ArrowDownRight size={20} aria-hidden="true" /></SectionLink>
+        </div>
+        <div className="hero-art">
+          <div className="vinyl" aria-hidden="true"><div className="vinyl-disc"><div className="vinyl-label"><b>SMKKB</b><small>SCHOOL BAND</small><i /><small>EST. 1977</small></div></div></div>
+          <figure className="hero-photo-wrap">
+            <div className="hero-photo-stack">
+              {available.map((photo, index) => <img key={photo.id} src={photo.src} alt={current?.id === photo.id ? photo.alt || photo.label : ''} aria-hidden={current?.id !== photo.id} className={`hero-photo-layer${index === 0 ? ' hero-photo-base' : ''}${current?.id === photo.id ? ' is-active' : ''}`} loading={index === 0 ? 'eager' : 'lazy'} fetchPriority={index === 0 ? 'high' : 'auto'} decoding="async" onError={() => setFailed(ids => ids.includes(photo.id) ? ids : [...ids, photo.id])} />)}
+              {!current && <div className="hero-photo-fallback"><span className="hero-photo-fallback-title">The band photograph is unavailable.</span><span className="eyebrow">The archive continues below.</span></div>}
+            </div>
+            <figcaption><span>{current?.event || 'SMKKB SCHOOL BAND'}</span><span>{String((active % Math.max(1, available.length)) + 1).padStart(2, '0')} / {String(available.length).padStart(2, '0')}</span></figcaption>
+            {available.length > 1 && <button type="button" className="hero-slide-control" aria-label={paused ? 'Resume photograph rotation' : 'Pause photograph rotation'} aria-pressed={paused} onClick={() => setPaused(value => !value)}>{paused ? <Play size={14} /> : <Pause size={14} />}</button>}
+          </figure>
+          <p className="hero-edition-caption">Many voices. One expression.</p>
+        </div>
+      </div>
+      <div className="hero-bottom"><span>ONE BAND ONE SOUND</span><span>A continuing story, since 1977.</span><span>Explore at your own pace ↓</span></div>
+    </div>
   </section>
 }

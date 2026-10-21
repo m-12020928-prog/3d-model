@@ -91,7 +91,7 @@ export function createTexture(gl: WebGLRenderingContext, source: TexImageSource)
   return texture
 }
 
-/** 生成“待补照片”版面：深色板面、金色细框、项目文字。与真实照片共用同一版式。 */
+/** 生成明确的档案纸版：用于未提供、载入和失败状态，不冒充真实照片。 */
 export function plateCanvas(title: string, subtitle: string, aspect = 0.78): HTMLCanvasElement {
   const width = 512
   const height = Math.round(width / aspect)
@@ -101,20 +101,20 @@ export function plateCanvas(title: string, subtitle: string, aspect = 0.78): HTM
   const ctx = canvas.getContext('2d')
   if (!ctx) return canvas
   const gradient = ctx.createLinearGradient(0, 0, width, height)
-  gradient.addColorStop(0, '#1b2734')
-  gradient.addColorStop(0.55, '#141d27')
-  gradient.addColorStop(1, '#0f1720')
+  gradient.addColorStop(0, '#f1e7d2')
+  gradient.addColorStop(0.55, '#e4d7be')
+  gradient.addColorStop(1, '#d9ccb2')
   ctx.fillStyle = gradient
   ctx.fillRect(0, 0, width, height)
 
-  ctx.strokeStyle = 'rgba(198,168,117,0.55)'
+  ctx.strokeStyle = 'rgba(33,30,27,0.5)'
   ctx.lineWidth = 2
   ctx.strokeRect(18, 18, width - 36, height - 36)
-  ctx.strokeStyle = 'rgba(185,200,213,0.14)'
+  ctx.strokeStyle = 'rgba(33,30,27,0.18)'
   ctx.lineWidth = 1
   ctx.strokeRect(32, 32, width - 64, height - 64)
 
-  ctx.strokeStyle = 'rgba(198,168,117,0.75)'
+  ctx.strokeStyle = 'rgba(143,41,43,0.75)'
   ctx.lineWidth = 3
   const corner = 34
   const marks: [number, number, number, number][] = [
@@ -128,16 +128,16 @@ export function plateCanvas(title: string, subtitle: string, aspect = 0.78): HTM
     ctx.stroke()
   }
 
-  ctx.fillStyle = 'rgba(198,168,117,0.9)'
-  ctx.font = '600 17px Inter, Helvetica, Arial, sans-serif'
+  ctx.fillStyle = '#8f292b'
+  ctx.font = '600 17px "Archivo Narrow", Arial, sans-serif'
   ctx.textAlign = 'center'
   ctx.fillText(title.toUpperCase(), width / 2, height / 2 - 6)
 
-  ctx.fillStyle = 'rgba(185,200,213,0.62)'
-  ctx.font = '400 14px Inter, Helvetica, Arial, sans-serif'
+  ctx.fillStyle = '#514b42'
+  ctx.font = '400 14px "IBM Plex Mono", monospace'
   ctx.fillText(subtitle, width / 2, height / 2 + 26)
 
-  ctx.strokeStyle = 'rgba(198,168,117,0.35)'
+  ctx.strokeStyle = 'rgba(143,41,43,0.4)'
   ctx.lineWidth = 1
   ctx.beginPath()
   ctx.moveTo(width / 2 - 46, height / 2 + 44)
