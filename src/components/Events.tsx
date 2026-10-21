@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowDownRight, ArrowUpRight, Minus, Plus } from 'lucide-react'
+import { ArrowDownRight, Minus, Plus } from 'lucide-react'
 import { copy, events } from '@/content/archive'
 import type { BandEvent } from '@/content/archive'
-import { ChapterLabel, PhotoSurface, SectionLink } from './ArchiveUI'
+import { ChapterLabel, SectionLink } from './ArchiveUI'
+import { PhotoCarousel } from './PhotoCarousel'
 import { useStageEntries } from './useStageEntries'
 import './stage-chapters.css'
 import './activity-archive.css'
@@ -10,25 +11,22 @@ import { SchoolLocation } from './SchoolLocation'
 
 function EventStage({ event, index }: { event: BandEvent; index: number }) {
   const [expanded, setExpanded] = useState(false)
-  const [photoIndex, setPhotoIndex] = useState(0)
   const detail = useRef<HTMLDivElement>(null)
   const openDetails = () => {
     setExpanded(true)
     requestAnimationFrame(() => detail.current?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' }))
   }
-  const gallery = event.photos.filter(photo => photo.src)
-  const shown = gallery[photoIndex] ?? gallery[0]
   return <article id={`event-${event.id}`} className={`event-stage event-stage-${index}`} data-stage aria-labelledby={`event-title-${event.id}`}>
     <div className="event-beam" aria-hidden="true" />
     <div className="event-sequence"><span className="eyebrow text-gold">Performance chapter / 0{index + 1}</span>{event.date && <span className="eyebrow">{event.date}</span>}</div>
-    <div className="event-composition">
-      <div className="event-main-photo"><PhotoSurface photo={event.photos[0]} />{event.result && <div className="event-award"><span className="eyebrow">Confirmed result</span><strong>{event.result}</strong></div>}</div>
+    <div className="event-composition event-carousel-layout">
       <div className="event-title-block"><span className="event-numeral" aria-hidden="true">0{index + 1}</span><h3 id={`event-title-${event.id}`}>{event.name}</h3>{event.venue && <p className="event-venue">{event.venue}</p>}<button type="button" className="text-link" aria-expanded={expanded} aria-controls={`details-${event.id}`} onClick={() => expanded ? setExpanded(false) : openDetails()}>{expanded ? 'Close chapter' : 'Explore this chapter'}{expanded ? <Minus size={17} /> : <ArrowDownRight size={17} />}</button></div>
-      {event.photos[1] && <div className="event-support-photo"><PhotoSurface photo={event.photos[1]} /><span className="eyebrow block mt-3">Another view</span></div>}
+      <PhotoCarousel photos={event.photos} variant="liquid" label={`${event.name} photographs`} />
+      {event.result && <div className="event-result"><span className="eyebrow">Confirmed result</span><strong>{event.result}</strong></div>}
     </div>
     <div ref={detail} id={`details-${event.id}`} className="event-details" hidden={!expanded}>
       <div className="event-detail-heading"><h4 className="font-display text-3xl">Inside the chapter.</h4><button type="button" className="text-link" onClick={() => setExpanded(false)} aria-label={`Close ${event.name} details`}>Close <Minus size={15} /></button></div>
-      <div className="event-detail-layout">
+      <div className="event-detail-layout event-facts-layout">
         <dl className="metadata">
           <dt>Event</dt><dd>{event.name}</dd>
           {event.date && <><dt>Date</dt><dd>{event.date}</dd></>}
@@ -36,7 +34,6 @@ function EventStage({ event, index }: { event: BandEvent; index: number }) {
           {event.result && <><dt>Result</dt><dd>{event.result}</dd></>}
           {event.summary && <><dt>About</dt><dd>{event.summary}</dd></>}
         </dl>
-        <div className="event-gallery">{shown && <PhotoSurface photo={shown} />}<div className="event-thumbnails" role="group" aria-label={`${event.name} gallery`}>{gallery.map((photo, i) => <button type="button" key={photo.id} aria-label={`Show photograph ${i + 1}`} aria-pressed={i === photoIndex} onClick={() => setPhotoIndex(i)} className={i === photoIndex ? 'selected' : ''}><span>0{i + 1}</span><span>{photo.featured || i === 0 ? 'Main photograph' : 'Supporting photograph'}</span><ArrowUpRight size={12} /></button>)}</div></div>
       </div>
     </div>
   </article>
@@ -46,10 +43,7 @@ function ActivityCollection({ event }: { event: BandEvent }) {
   return <details className="activity-row">
     <summary><span>{event.name}</span><Plus size={15} aria-hidden="true" /></summary>
     {event.summary && <p className="activity-summary">{event.summary}</p>}
-    <div className="activity-gallery">{event.photos.map(photo => <figure key={photo.id} className="activity-frame">
-      <PhotoSurface photo={photo} />
-      {photo.caption && <figcaption>{photo.caption}</figcaption>}
-    </figure>)}</div>
+    <PhotoCarousel photos={event.photos} variant="cylinder" label={`${event.name} photographs`} />
   </details>
 }
 
